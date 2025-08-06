@@ -12,7 +12,12 @@ const authRoutes = require("./routes/auth");
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: "https://medi-trap-frontend.vercel.app",
+    credentials: "true",
+  })
+);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 mongoose
