@@ -1,11 +1,40 @@
-require("dotenv").config({ path: "./config.env" });
+// Load environment variables. Resolve files relative to this file's
+// directory first (Backend/), then fall back to the process cwd. This
+// avoids issues when nodemon or scripts run from the repository root.
+const dotenv = require("dotenv");
+const fs = require("fs");
+const path = require("path");
+
+const envCandidates = [
+  path.join(__dirname, "config.env"),
+  path.join(__dirname, ".env"),
+  path.join(process.cwd(), "config.env"),
+  path.join(process.cwd(), ".env"),
+];
+
+let loaded = false;
+for (const p of envCandidates) {
+  if (fs.existsSync(p)) {
+    dotenv.config({ path: p });
+    console.log(`Loaded environment from ${p}`);
+    loaded = true;
+    break;
+  }
+}
+
+if (!loaded) {
+  // No env file found in Backend or current working dir. Still call dotenv
+  // (no-op) to keep behavior consistent, but warn the user.
+  dotenv.config();
+  console.warn('No config.env or .env file found in Backend or current working directory. Environment variables may be missing.');
+}
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const path = require("path");
 
 // Import routes
 const authRoutes = require("./routes/auth");
+const purchaserRoutes = require("./routes/purchaser");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -45,6 +74,8 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/api/auth", authRoutes);
+// Mount purchaser routes
+app.use("/api/purchaser", purchaserRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -94,7 +125,21 @@ app.use("*", (req, res) => {
 // MongoDB connection
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
+    // Support multiple common environment variable names for the MongoDB URI.
+    // This project historically referenced `MONGO_URI` in code but some
+    // env files use `MONGODB_URI` or `DB_URI`. Accept any of them.
+    const mongoUri =
+      process.env.MONGO_URI || process.env.MONGODB_URI || process.env.DB_URI;
+
+    if (!mongoUri || typeof mongoUri !== "string") {
+      throw new Error(
+        'MongoDB connection string not set. Please add MONGO_URI (or MONGODB_URI/DB_URI) to config.env or .env and restart.'
+      );
+    }
+
+    console.log(`Using MongoDB URI from ${process.env.MONGO_URI ? 'MONGO_URI' : process.env.MONGODB_URI ? 'MONGODB_URI' : 'DB_URI'}`);
+
+    const conn = await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
