@@ -21,4 +21,3 @@ router.get("/", purchaserController.getPurchasers);
 router.delete("/:id", purchaserController.deletePurchaser);
 
 module.exports = router;
-

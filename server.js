@@ -26,7 +26,9 @@ if (!loaded) {
   // No env file found in Backend or current working dir. Still call dotenv
   // (no-op) to keep behavior consistent, but warn the user.
   dotenv.config();
-  console.warn('No config.env or .env file found in Backend or current working directory. Environment variables may be missing.');
+  console.warn(
+    "No config.env or .env file found in Backend or current working directory. Environment variables may be missing."
+  );
 }
 const express = require("express");
 const mongoose = require("mongoose");
@@ -133,11 +135,19 @@ const connectDB = async () => {
 
     if (!mongoUri || typeof mongoUri !== "string") {
       throw new Error(
-        'MongoDB connection string not set. Please add MONGO_URI (or MONGODB_URI/DB_URI) to config.env or .env and restart.'
+        "MongoDB connection string not set. Please add MONGO_URI (or MONGODB_URI/DB_URI) to config.env or .env and restart."
       );
     }
 
-    console.log(`Using MongoDB URI from ${process.env.MONGO_URI ? 'MONGO_URI' : process.env.MONGODB_URI ? 'MONGODB_URI' : 'DB_URI'}`);
+    console.log(
+      `Using MongoDB URI from ${
+        process.env.MONGO_URI
+          ? "MONGO_URI"
+          : process.env.MONGODB_URI
+          ? "MONGODB_URI"
+          : "DB_URI"
+      }`
+    );
 
     const conn = await mongoose.connect(mongoUri, {
       useNewUrlParser: true,

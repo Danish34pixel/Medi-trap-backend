@@ -24,7 +24,7 @@ exports.createPurchaser = async (req, res) => {
     res.status(201).json({ success: true, data: purchaser });
   } catch (err) {
     // Log full error on server for debugging
-    console.error('PurchaserController error:', err);
+    console.error("PurchaserController error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
