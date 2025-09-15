@@ -99,7 +99,10 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-app.use(cors(corsOptions));
+// Note: dynamic CORS middleware will be applied after the allowedOrigins
+// set is created below so it can use the runtime allowlist. The static
+// cors(corsOptions) call is intentionally omitted here.
+// app.use(cors(corsOptions));
 
 // Robust origin echo middleware: read allowed origins from FRONTEND_URLS
 // (comma-separated) or FRONTEND_URL (single). If the incoming request's
@@ -115,6 +118,24 @@ const allowedOrigins = new Set(
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
+);
+
+// Dynamic CORS middleware: reflect the incoming Origin when allowed.
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (curl, server-to-server) with no Origin
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      // Not allowed: do not throw an error (that bubbles to the global error
+      // handler). Instead, respond with success=false so CORS middleware will
+      // not set the CORS headers and the browser will block the request.
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
 );
 
 // Debug: print allowed origins at startup
