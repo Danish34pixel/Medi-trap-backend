@@ -37,6 +37,9 @@ const cors = require("cors");
 // Import routes
 const authRoutes = require("./routes/auth");
 const purchaserRoutes = require("./routes/purchaser");
+const stockistRoutes = require("./routes/stockist");
+const medicineRoutes = require("./routes/medicine");
+const companyRoutes = require("./routes/company");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -78,6 +81,10 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRoutes);
 // Mount purchaser routes
 app.use("/api/purchaser", purchaserRoutes);
+// Mount placeholder routes for frontend
+app.use("/api/stockist", stockistRoutes);
+app.use("/api/medicine", medicineRoutes);
+app.use("/api/company", companyRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
