@@ -36,7 +36,7 @@ const cors = require("cors");
 
 // Import routes
 const authRoutes = require("./routes/auth");
-const purchaserRoutes = require("./routes/purchaser");
+const purchaserRoutes = require("./routes/Purchaser");
 const stockistRoutes = require("./routes/stockist");
 const medicineRoutes = require("./routes/medicine");
 const companyRoutes = require("./routes/company");
