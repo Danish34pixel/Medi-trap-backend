@@ -117,9 +117,15 @@ const allowedOrigins = new Set(
     .filter(Boolean)
 );
 
+// Debug: print allowed origins at startup
+console.log("Allowed CORS origins:", Array.from(allowedOrigins));
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.has(origin)) {
+  const allowed = !!(origin && allowedOrigins.has(origin));
+  // Debug: log incoming origin and whether it's allowed
+  console.log(`CORS: incoming Origin=${origin} allowed=${allowed}`);
+  if (allowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader(
