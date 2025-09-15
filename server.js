@@ -101,6 +101,23 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Explicit CORS header middleware to ensure deployed hosts always return
+// Access-Control-Allow-Origin (helps platforms that may strip or not honor
+// the cors() middleware in some edge configurations).
+const frontendOrigin =
+  process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app";
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", frontendOrigin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Security headers
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
