@@ -101,20 +101,34 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Explicit CORS header middleware to ensure deployed hosts always return
-// Access-Control-Allow-Origin (helps platforms that may strip or not honor
-// the cors() middleware in some edge configurations).
-const frontendOrigin =
-  process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app";
+// Robust origin echo middleware: read allowed origins from FRONTEND_URLS
+// (comma-separated) or FRONTEND_URL (single). If the incoming request's
+// Origin matches an allowed origin, echo it back. This prevents the
+// Access-Control-Allow-Origin header from containing a static value that
+// doesn't match the browser-supplied Origin.
+const rawFrontends =
+  process.env.FRONTEND_URLS ||
+  process.env.FRONTEND_URL ||
+  "https://medi-trap-frontend.vercel.app";
+const allowedOrigins = new Set(
+  rawFrontends
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", frontendOrigin);
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  // Handle preflight
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,DELETE,OPTIONS"
+    );
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
