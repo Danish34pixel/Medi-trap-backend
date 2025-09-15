@@ -39,7 +39,7 @@ const upload = multer({
   fileFilter: fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1, // Only 1 file per request
+    files: 4, // allow multiple files per request (image + aadharCard)
   },
 });
 

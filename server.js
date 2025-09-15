@@ -76,6 +76,7 @@ const purchaserRoutes = tryRequireRoute("Purchaser");
 const stockistRoutes = tryRequireRoute("stockist");
 const medicineRoutes = tryRequireRoute("medicine");
 const companyRoutes = tryRequireRoute("company");
+const staffRoutes = tryRequireRoute("staff");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -110,11 +111,14 @@ const corsOptions = {
 // API even when the Render environment wasn't updated. Any values in
 // FRONTEND_URLS or FRONTEND_URL will be merged with this default.
 const DEFAULT_FRONTEND = "https://medi-trap-frontend.vercel.app";
+// Include common local dev origins so Vite (localhost:5173) can talk to the API during development.
+const DEV_FRONTENDS = ["http://localhost:5173", "http://127.0.0.1:5173"];
 const rawFrontends =
   process.env.FRONTEND_URLS || process.env.FRONTEND_URL || DEFAULT_FRONTEND;
 const allowedOrigins = new Set(
-  // Start from the default and merge any environment-provided origins.
+  // Start from the default, include common dev origins, and merge any environment-provided origins.
   [DEFAULT_FRONTEND]
+    .concat(DEV_FRONTENDS)
     .concat(
       rawFrontends
         .split(",")
@@ -172,6 +176,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve uploaded files (images) so frontend can load them by URL
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -186,6 +193,8 @@ app.use("/api/purchaser", purchaserRoutes);
 app.use("/api/stockist", stockistRoutes);
 app.use("/api/medicine", medicineRoutes);
 app.use("/api/company", companyRoutes);
+// Mount staff routes
+app.use("/api/staff", staffRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
