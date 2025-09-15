@@ -1,13 +1,3 @@
-// Shim for case-insensitive compatibility: forward lowercase require to the
-// existing `Purchaser.js` file. This ensures deployments on Linux (case-
-// sensitive) can resolve `./routes/purchaser` when the file on disk is
-// `Purchaser.js` (created on Windows).
-try {
-  module.exports = require("./Purchaser");
-} catch (err) {
-  // If that fails for any reason, rethrow to surface the error during startup
-  throw err;
-}
 const express = require("express");
 const router = express.Router();
 const { upload: uploadAadhar } = require("../middleware/upload");

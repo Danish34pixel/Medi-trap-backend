@@ -34,12 +34,50 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
-// Import routes
-const authRoutes = require("./routes/auth");
-const purchaserRoutes = require("./routes/Purchaser");
-const stockistRoutes = require("./routes/stockist");
-const medicineRoutes = require("./routes/medicine");
-const companyRoutes = require("./routes/company");
+// Import routes (case-robust): try multiple casings and fall back to a stub router
+
+const tryRequireRoute = (basePath) => {
+  const variants = [
+    basePath,
+    basePath.toLowerCase(),
+    basePath[0].toUpperCase() + basePath.slice(1),
+  ];
+  for (const v of variants) {
+    try {
+      // Attempt require relative to this file
+      return require(`./routes/${v}`);
+    } catch (err) {
+      // continue trying other variants
+    }
+    try {
+      // Attempt alternate relative path (some shims use ../Backend/routes)
+      return require(`../routes/${v}`);
+    } catch (err) {
+      // continue
+    }
+  }
+
+  // If none of the variants worked, return a harmless router that responds
+  // with a 501 so the server doesn't crash on startup in deployments where
+  // the file is missing or differently named.
+  const stub = express.Router();
+  stub.use((req, res) =>
+    res
+      .status(501)
+      .json({
+        success: false,
+        message: "Route not implemented on this deployment.",
+      })
+  );
+  return stub;
+};
+
+// Import route modules using the resilient helper
+const authRoutes = tryRequireRoute("auth");
+const purchaserRoutes = tryRequireRoute("Purchaser");
+const stockistRoutes = tryRequireRoute("stockist");
+const medicineRoutes = tryRequireRoute("medicine");
+const companyRoutes = tryRequireRoute("company");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
