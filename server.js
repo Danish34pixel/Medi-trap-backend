@@ -62,12 +62,10 @@ const tryRequireRoute = (basePath) => {
   // the file is missing or differently named.
   const stub = express.Router();
   stub.use((req, res) =>
-    res
-      .status(501)
-      .json({
-        success: false,
-        message: "Route not implemented on this deployment.",
-      })
+    res.status(501).json({
+      success: false,
+      message: "Route not implemented on this deployment.",
+    })
   );
   return stub;
 };
@@ -90,9 +88,11 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // CORS configuration
 const corsOptions = {
+  // Allow the production frontend by default (Vercel URL). The FRONTEND_URL
+  // environment variable can override this for other deployments.
   origin: [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    "https://medi-trap-frontend.vercel.app",
+    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app",
+    "http://localhost:5173",
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
