@@ -39,6 +39,22 @@ exports.getPurchasers = async (req, res) => {
   }
 };
 
+// Get single purchaser by ID
+exports.getPurchaser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const purchaser = await Purchaser.findById(id);
+    if (!purchaser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Purchaser not found." });
+    }
+    res.json({ success: true, data: purchaser });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // Delete purchaser by ID
 exports.deletePurchaser = async (req, res) => {
   try {

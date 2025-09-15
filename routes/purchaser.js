@@ -17,6 +17,9 @@ router.post(
 // GET /api/purchaser - get all purchasers
 router.get("/", purchaserController.getPurchasers);
 
+// GET /api/purchaser/:id - get purchaser details
+router.get("/:id", purchaserController.getPurchaser);
+
 // DELETE /api/purchaser/:id - delete purchaser by id
 router.delete("/:id", purchaserController.deletePurchaser);
 
