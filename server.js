@@ -105,19 +105,24 @@ const corsOptions = {
 // app.use(cors(corsOptions));
 
 // Robust origin echo middleware: read allowed origins from FRONTEND_URLS
-// (comma-separated) or FRONTEND_URL (single). If the incoming request's
-// Origin matches an allowed origin, echo it back. This prevents the
-// Access-Control-Allow-Origin header from containing a static value that
-// doesn't match the browser-supplied Origin.
+// (comma-separated) or FRONTEND_URL (single). We always include the Vercel
+// frontend origin as a sensible default so deployed frontends can access the
+// API even when the Render environment wasn't updated. Any values in
+// FRONTEND_URLS or FRONTEND_URL will be merged with this default.
+const DEFAULT_FRONTEND = "https://medi-trap-frontend.vercel.app";
 const rawFrontends =
-  process.env.FRONTEND_URLS ||
-  process.env.FRONTEND_URL ||
-  "https://medi-trap-frontend.vercel.app";
+  process.env.FRONTEND_URLS || process.env.FRONTEND_URL || DEFAULT_FRONTEND;
 const allowedOrigins = new Set(
-  rawFrontends
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
+  // Start from the default and merge any environment-provided origins.
+  [DEFAULT_FRONTEND]
+    .concat(
+      rawFrontends
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+    // Normalize and dedupe
+    .map((s) => s.replace(/\/+$/, ""))
 );
 
 // Dynamic CORS middleware: reflect the incoming Origin when allowed.
