@@ -77,6 +77,7 @@ const stockistRoutes = tryRequireRoute("stockist");
 const medicineRoutes = tryRequireRoute("medicine");
 const companyRoutes = tryRequireRoute("company");
 const staffRoutes = tryRequireRoute("staff");
+const migrationRoutes = tryRequireRoute("migration");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -112,7 +113,7 @@ const corsOptions = {
 // FRONTEND_URLS or FRONTEND_URL will be merged with this default.
 const DEFAULT_FRONTEND = "https://medi-trap-frontend.vercel.app";
 // Include common local dev origins so Vite (localhost:5173) can talk to the API during development.
-const DEV_FRONTENDS = ["http://localhost:5173", "http://127.0.0.1:5173"];
+const DEV_FRONTENDS = ["http://localhost:5173", "http://10.0.2.2:5000"];
 const rawFrontends =
   process.env.FRONTEND_URLS || process.env.FRONTEND_URL || DEFAULT_FRONTEND;
 const allowedOrigins = new Set(
@@ -195,6 +196,8 @@ app.use("/api/medicine", medicineRoutes);
 app.use("/api/company", companyRoutes);
 // Mount staff routes
 app.use("/api/staff", staffRoutes);
+// Mount migration routes (dry-run backfill)
+app.use("/api/migration", migrationRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

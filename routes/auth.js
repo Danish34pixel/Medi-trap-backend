@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Stockist = require("../models/Stockist");
 const { uploadToCloudinary } = require("../config/cloudinary");
 const {
   upload,
@@ -149,37 +150,68 @@ router.post("/login", async (req, res) => {
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
+    let user = await User.findOne({ email: email.toLowerCase() });
 
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+    // If no User found, check Stockist collection (admin may have created stockist with password)
+    let isStockist = false;
+    if (!user) {
+      const stockist = await Stockist.findOne({
+        email: email.toLowerCase(),
+      }).lean();
+      if (!stockist || !stockist.password) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid credentials" });
+      }
+
+      const isMatchStockist = await bcrypt.compare(password, stockist.password);
+      if (!isMatchStockist) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid credentials" });
+      }
+
+      // Create a lightweight user-like object for the stockist
+      user = {
+        _id: stockist._id,
+        medicalName: stockist.name || stockist.medicalName || "",
+        ownerName: stockist.contactPerson || "",
+        address: stockist.address || "",
+        email: stockist.email,
+        contactNo: stockist.phone || stockist.contact || "",
+        role: "stockist",
+      };
+      isStockist = true;
+    } else {
+      // Check password for regular User
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid credentials" });
+      }
     }
 
     // Create JWT token
     const payload = {
       userId: user._id,
       email: user.email,
-      role: user.role,
+      role: user.role || "stockist",
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: "7d", // Token expires in 7 days
     });
 
-    // Remove password from response
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    // Remove password from response (handle Mongoose doc vs plain object)
+    let userResponse;
+    try {
+      userResponse =
+        typeof user.toObject === "function" ? user.toObject() : { ...user };
+    } catch (e) {
+      userResponse = { ...user };
+    }
+    if (userResponse && userResponse.password) delete userResponse.password;
 
     res.json({
       success: true,

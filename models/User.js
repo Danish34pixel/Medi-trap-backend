@@ -59,7 +59,8 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
+      // allow 'stockist' role so stockist accounts can be represented and granted rights
+      enum: ["user", "admin", "stockist"],
       default: "user",
     },
   },

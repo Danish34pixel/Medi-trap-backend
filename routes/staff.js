@@ -5,8 +5,11 @@ const staffController = require("../controllers/staffController");
 const { authenticate, isAdmin } = require("../middleware/auth");
 
 // POST /api/staff - create staff (expects image and aadharCard files)
+// POST /api/staff - create staff (expects image and aadharCard files)
+// Only authenticated stockists or admins may create staff
 router.post(
   "/",
+  authenticate,
   upload.fields([
     { name: "image", maxCount: 1 },
     { name: "aadharCard", maxCount: 1 },
@@ -15,12 +18,13 @@ router.post(
 );
 
 // GET /api/staff - list staff
-router.get("/", staffController.getStaffs);
+// listing is public but can be filtered by ?stockist=me (requires auth) or ?stockist=<id>
+router.get("/", authenticate, staffController.getStaffs);
 
 // GET /api/staff/:id - get staff details
-router.get("/:id", staffController.getStaff);
+router.get("/:id", authenticate, staffController.getStaff);
 
-// DELETE /api/staff/:id - delete staff (admin only)
-router.delete("/:id", authenticate, isAdmin, staffController.deleteStaff);
+// DELETE /api/staff/:id - delete staff (admin or owning stockist)
+router.delete("/:id", authenticate, staffController.deleteStaff);
 
 module.exports = router;
