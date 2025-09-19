@@ -18,14 +18,20 @@ exports.createStaff = async (req, res) => {
         .json({ success: false, message: "Authentication required." });
     }
 
-    // Only stockists (and admins) can create staff
-    if (reqUser.role !== "stockist" && reqUser.role !== "admin") {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Only stockists or admins can create staff.",
-        });
+    // Only stockists (and admins) can create staff.
+    // Accept cases where the authenticated object is a Stockist document even if
+    // the `role` field is missing (some stockist records are stored raw).
+    const isStockist =
+      (reqUser && reqUser.role === "stockist") ||
+      (reqUser &&
+        reqUser.constructor &&
+        reqUser.constructor.modelName === "Stockist");
+    const isAdminUser = reqUser && reqUser.role === "admin";
+    if (!isStockist && !isAdminUser) {
+      return res.status(403).json({
+        success: false,
+        message: "Only stockists or admins can create staff.",
+      });
     }
 
     if (!req.files || !req.files["image"] || !req.files["aadharCard"]) {
@@ -50,6 +56,14 @@ exports.createStaff = async (req, res) => {
       console.warn("Failed to delete temp files:", e);
     }
 
+    // Determine owning stockist for this staff record.
+    // - If the requester is an admin and provided `stockist` in the body, use that.
+    // - Otherwise, use the authenticated user's id (stockist owner).
+    let owningStockistId = reqUser._id;
+    if (reqUser.role === "admin" && req.body && req.body.stockist) {
+      owningStockistId = req.body.stockist;
+    }
+
     const staff = new Staff({
       fullName,
       address,
@@ -59,8 +73,8 @@ exports.createStaff = async (req, res) => {
       aadharCard: uploadedAadhar.url,
       imagePublicId: uploadedImage.public_id,
       aadharPublicId: uploadedAadhar.public_id,
-      // record ownership (stockist user creating the staff)
-      stockist: reqUser._id,
+      // record ownership (stockist user creating the staff or admin-specified stockist)
+      stockist: owningStockistId,
     });
 
     await staff.save();
@@ -127,12 +141,10 @@ exports.deleteStaff = async (req, res) => {
     const isOwner =
       staff.stockist && String(staff.stockist) === String(reqUser._id);
     if (reqUser.role !== "admin" && !isOwner) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Not authorized to delete this staff.",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this staff.",
+      });
     }
 
     // proceed to delete

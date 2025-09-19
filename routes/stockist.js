@@ -10,7 +10,7 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 // GET /api/stockist - list stockists
 router.get("/", stockistController.getStockists);
 
-// POST /api/stockist - create a new stockist (admin only)
-router.post("/", authenticate, isAdmin, stockistController.createStockist);
+// POST /api/stockist - create a new stockist (any authenticated user)
+router.post("/", authenticate, stockistController.createStockist);
 
 module.exports = router;
