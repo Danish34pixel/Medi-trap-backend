@@ -1,6 +1,7 @@
 const Stockist = require("../models/Stockist");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const { uploadToCloudinary } = require("../config/cloudinary");
 
 // Get list of stockists
 exports.getStockists = async (req, res) => {
@@ -10,6 +11,49 @@ exports.getStockists = async (req, res) => {
   } catch (err) {
     console.error("getStockists error:", err);
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Upload a license image (server-side) and return the Cloudinary URL
+exports.uploadLicenseImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    }
+
+    // Use a specific folder for stockist licenses
+    const folder = "stockist drug lisence";
+    const result = await uploadToCloudinary(req.file, folder);
+
+    return res
+      .status(200)
+      .json({ success: true, url: result.url, public_id: result.public_id });
+  } catch (err) {
+    console.error("uploadLicenseImage error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Upload profile image for stockist and return Cloudinary URL
+exports.uploadProfileImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No file uploaded" });
+    }
+
+    const folder = "stockist image";
+    const result = await uploadToCloudinary(req.file, folder);
+
+    return res
+      .status(200)
+      .json({ success: true, url: result.url, public_id: result.public_id });
+  } catch (err) {
+    console.error("uploadProfileImage error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -80,6 +124,41 @@ exports.createStockist = async (req, res) => {
       payload.password = await bcrypt.hash(String(payload.password), salt);
     }
 
+    // Normalize license image url if provided
+    if (payload.licenseImageUrl) {
+      try {
+        payload.licenseImageUrl = String(payload.licenseImageUrl).trim();
+      } catch (e) {
+        // ignore malformed value and delete
+        delete payload.licenseImageUrl;
+      }
+    }
+
+    // New fields normalization
+    if (payload.dob) {
+      try {
+        payload.dob = new Date(payload.dob);
+      } catch (e) {
+        delete payload.dob;
+      }
+    }
+
+    if (payload.bloodGroup) {
+      payload.bloodGroup = String(payload.bloodGroup).trim();
+    }
+
+    if (payload.profileImageUrl) {
+      try {
+        payload.profileImageUrl = String(payload.profileImageUrl).trim();
+      } catch (e) {
+        delete payload.profileImageUrl;
+      }
+    }
+
+    if (payload.roleType) payload.roleType = String(payload.roleType).trim();
+    if (payload.cntxNumber)
+      payload.cntxNumber = String(payload.cntxNumber).trim();
+
     const stockist = new Stockist(payload);
     await stockist.save();
 
@@ -87,6 +166,57 @@ exports.createStockist = async (req, res) => {
   } catch (err) {
     console.error("createStockist error:", err);
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Verify stockist password (used by QR-protected detail view)
+exports.verifyStockistPassword = async (req, res) => {
+  try {
+    const { id, password } = req.body || {};
+    if (!id || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "id and password are required" });
+    }
+
+    const stockist = await Stockist.findById(id).lean();
+    if (!stockist || !stockist.password) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Stockist not found" });
+    }
+
+    const match = await bcrypt.compare(
+      String(password),
+      String(stockist.password)
+    );
+    if (!match) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid password" });
+    }
+
+    // Return safe fields only
+    const safe = {
+      _id: stockist._id,
+      name: stockist.name,
+      firmName: stockist.name,
+      contactPerson: stockist.contactPerson,
+      phone: stockist.phone,
+      email: stockist.email,
+      address: stockist.address || {},
+      dob: stockist.dob || null,
+      bloodGroup: stockist.bloodGroup || null,
+      roleType: stockist.roleType || null,
+      cntxNumber: stockist.cntxNumber || null,
+      profileImageUrl: stockist.profileImageUrl || null,
+      licenseImageUrl: stockist.licenseImageUrl || null,
+    };
+
+    return res.status(200).json({ success: true, data: safe });
+  } catch (err) {
+    console.error("verifyStockistPassword error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
