@@ -1,6 +1,7 @@
 const Stockist = require("../models/Stockist");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const { uploadToCloudinary } = require("../config/cloudinary");
 
 // Get list of stockists
@@ -166,6 +167,123 @@ exports.createStockist = async (req, res) => {
   } catch (err) {
     console.error("createStockist error:", err);
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Public registration: create a stockist and return a JWT for immediate use
+exports.registerStockist = async (req, res) => {
+  try {
+    const payload = req.body || {};
+
+    // Minimal validation: require a name/title
+    const name =
+      payload.name || payload.title || payload.companyName || payload.name;
+    if (!name) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Stockist name is required." });
+    }
+
+    // Ensure email and phone uniqueness (same checks as createStockist)
+    const emailRaw = payload.email;
+    const phoneRaw = payload.phone || payload.contactNo || payload.contact;
+
+    if (emailRaw) {
+      const email = String(emailRaw).toLowerCase().trim();
+      const [userExists, stockistExists] = await Promise.all([
+        User.findOne({ email }).lean(),
+        Stockist.findOne({ email }).lean(),
+      ]);
+      if (userExists) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Email already in use by a user." });
+      }
+      if (stockistExists) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Email already in use by another stockist.",
+          });
+      }
+    }
+
+    if (phoneRaw) {
+      const phone = String(phoneRaw).trim();
+      const [userExistsByPhone, stockistExistsByPhone] = await Promise.all([
+        User.findOne({ contactNo: phone }).lean(),
+        Stockist.findOne({ phone }).lean(),
+      ]);
+      if (userExistsByPhone) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Phone number already in use by a user.",
+          });
+      }
+      if (stockistExistsByPhone) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Phone number already in use by another stockist.",
+          });
+      }
+    }
+
+    if (emailRaw) payload.email = String(emailRaw).toLowerCase().trim();
+    if (phoneRaw) payload.phone = String(phoneRaw).trim();
+
+    if (payload.password) {
+      const salt = await bcrypt.genSalt(12);
+      payload.password = await bcrypt.hash(String(payload.password), salt);
+    }
+
+    if (payload.licenseImageUrl) {
+      try {
+        payload.licenseImageUrl = String(payload.licenseImageUrl).trim();
+      } catch (e) {
+        delete payload.licenseImageUrl;
+      }
+    }
+
+    if (payload.dob) {
+      try {
+        payload.dob = new Date(payload.dob);
+      } catch (e) {
+        delete payload.dob;
+      }
+    }
+
+    if (payload.bloodGroup)
+      payload.bloodGroup = String(payload.bloodGroup).trim();
+    if (payload.profileImageUrl) {
+      try {
+        payload.profileImageUrl = String(payload.profileImageUrl).trim();
+      } catch (e) {
+        delete payload.profileImageUrl;
+      }
+    }
+    if (payload.roleType) payload.roleType = String(payload.roleType).trim();
+    if (payload.cntxNumber)
+      payload.cntxNumber = String(payload.cntxNumber).trim();
+
+    const stockist = new Stockist(payload);
+    await stockist.save();
+
+    // Generate a JWT for the newly registered stockist
+    const token = jwt.sign(
+      { userId: stockist._id, role: "stockist" },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(201).json({ success: true, data: stockist, token });
+  } catch (err) {
+    console.error("registerStockist error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 

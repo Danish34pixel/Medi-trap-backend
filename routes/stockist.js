@@ -18,6 +18,9 @@ router.get("/", stockistController.getStockists);
 // POST /api/stockist - create a new stockist (any authenticated user)
 router.post("/", authenticate, stockistController.createStockist);
 
+// POST /api/stockist/register - public registration for stockists (returns token)
+router.post("/register", stockistController.registerStockist);
+
 // POST /api/stockist/upload-license - upload license image (multipart) and return Cloudinary URL
 router.post(
   "/upload-license",
