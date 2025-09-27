@@ -137,6 +137,17 @@ app.use(
       // Allow non-browser requests (curl, server-to-server) with no Origin
       if (!origin) return callback(null, true);
       if (allowedOrigins.has(origin)) return callback(null, true);
+      // During development, allow common local-LAN origins (phone testing)
+      if (isDevelopment) {
+        try {
+          // Accept origins like http://192.168.x.y(:port) or http://10.x.x.x(:port)
+          const localLanRegex =
+            /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
+          if (localLanRegex.test(origin)) return callback(null, true);
+        } catch (e) {
+          // ignore and fallthrough to reject
+        }
+      }
       // Not allowed: do not throw an error (that bubbles to the global error
       // handler). Instead, respond with success=false so CORS middleware will
       // not set the CORS headers and the browser will block the request.
@@ -153,7 +164,17 @@ console.log("Allowed CORS origins:", Array.from(allowedOrigins));
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const allowed = !!(origin && allowedOrigins.has(origin));
+  let allowed = !!(origin && allowedOrigins.has(origin));
+  if (!allowed && isDevelopment) {
+    // Mirror the same local LAN allowlist as the CORS handler above
+    try {
+      const localLanRegex =
+        /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
+      if (origin && localLanRegex.test(origin)) allowed = true;
+    } catch (e) {
+      // ignore
+    }
+  }
   // Debug: log incoming origin and whether it's allowed
   console.log(`CORS: incoming Origin=${origin} allowed=${allowed}`);
   if (allowed) {
@@ -236,12 +257,11 @@ app.use((error, req, res, next) => {
   });
 });
 
-
 // 404 handler (must be last, and avoid wildcard string)
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Route not found',
+    message: "Route not found",
   });
 });
 

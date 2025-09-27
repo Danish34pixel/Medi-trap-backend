@@ -10,7 +10,10 @@ const {
   cleanupUploads,
 } = require("../middleware/upload");
 const { authenticate } = require("../middleware/auth");
-const { forgotPassword, resetPassword } = require('../controllers/passwordController');
+const {
+  forgotPassword,
+  resetPassword,
+} = require("../controllers/passwordController");
 const router = express.Router();
 
 // Rate limiting for auth routes
@@ -248,8 +251,35 @@ router.get("/me", authenticate, async (req, res) => {
 });
 
 // Password reset endpoints
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
+
+// Development-only: send a test email and return preview URL (Ethereal)
+if (isDevelopment) {
+  const { sendMail } = require("../utils/mailer");
+  router.post("/debug/send-test-email", async (req, res) => {
+    try {
+      const { to, subject, html, text, from } = req.body || {};
+      if (!to)
+        return res
+          .status(400)
+          .json({ success: false, message: "to is required" });
+      const result = await sendMail({
+        to,
+        subject: subject || "Test email",
+        html,
+        text,
+        from,
+      });
+      return res.json({ success: true, previewUrl: result.previewUrl || null });
+    } catch (err) {
+      console.error("debug send-test-email error:", err && err.message);
+      return res
+        .status(500)
+        .json({ success: false, message: err && err.message });
+    }
+  });
+}
 
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
