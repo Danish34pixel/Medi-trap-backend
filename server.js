@@ -236,11 +236,12 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use("*", (req, res) => {
+
+// 404 handler (must be last, and avoid wildcard string)
+app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "Route not found",
+    message: 'Route not found',
   });
 });
 

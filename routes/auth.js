@@ -10,6 +10,7 @@ const {
   cleanupUploads,
 } = require("../middleware/upload");
 const { authenticate } = require("../middleware/auth");
+const { forgotPassword, resetPassword } = require('../controllers/passwordController');
 const router = express.Router();
 
 // Rate limiting for auth routes
@@ -245,6 +246,10 @@ router.get("/me", authenticate, async (req, res) => {
     });
   }
 });
+
+// Password reset endpoints
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
