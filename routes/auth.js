@@ -281,6 +281,40 @@ if (isDevelopment) {
   });
 }
 
+// Protected test-send endpoint for staging/production
+// Usage: POST /api/auth/test-send-email { to, subject, html, text }
+// Requires: Authorization: Bearer <token>
+router.post("/test-send-email", authenticate, async (req, res) => {
+  try {
+    const { sendMail } = require("../utils/mailer");
+    const { to, subject, html, text, from } = req.body || {};
+    if (!to)
+      return res
+        .status(400)
+        .json({ success: false, message: "to is required" });
+
+    const result = await sendMail({
+      to,
+      subject: subject || "Test email",
+      html,
+      text,
+      from,
+    });
+
+    // Return provider info but avoid leaking full auth details
+    return res.json({
+      success: true,
+      previewUrl: result.previewUrl || null,
+      info: !!result.info,
+    });
+  } catch (err) {
+    console.error("test-send-email error:", err && err.message);
+    return res
+      .status(500)
+      .json({ success: false, message: err && err.message });
+  }
+});
+
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
 // @access  Private
