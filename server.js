@@ -1,3 +1,4 @@
+const isDevelopment = process.env.NODE_ENV === "development";
 // Load environment variables. Resolve files relative to this file's
 // directory first (Backend/), then fall back to the process cwd. This
 // avoids issues when nodemon or scripts run from the repository root.
@@ -164,13 +165,18 @@ console.log("Allowed CORS origins:", Array.from(allowedOrigins));
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  let allowed = !!(origin && allowedOrigins.has(origin));
-  if (!allowed && isDevelopment) {
+  let allowed = false;
+  if (!origin) {
+    // Allow requests with no Origin header (static files, images)
+    allowed = true;
+  } else if (allowedOrigins.has(origin)) {
+    allowed = true;
+  } else if (isDevelopment) {
     // Mirror the same local LAN allowlist as the CORS handler above
     try {
       const localLanRegex =
         /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
-      if (origin && localLanRegex.test(origin)) allowed = true;
+      if (localLanRegex.test(origin)) allowed = true;
     } catch (e) {
       // ignore
     }
@@ -178,7 +184,7 @@ app.use((req, res, next) => {
   // Debug: log incoming origin and whether it's allowed
   console.log(`CORS: incoming Origin=${origin} allowed=${allowed}`);
   if (allowed) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader(
       "Access-Control-Allow-Methods",
