@@ -1,8 +1,9 @@
+const dotenv = require("dotenv");
+dotenv.config()
 const isDevelopment = process.env.NODE_ENV === "development";
 // Load environment variables. Resolve files relative to this file's
 // directory first (Backend/), then fall back to the process cwd. This
 // avoids issues when nodemon or scripts run from the repository root.
-const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
 

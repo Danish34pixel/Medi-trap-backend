@@ -16,44 +16,43 @@ function hashToken(token) {
 // body: { email }
 async function forgotPassword(req, res) {
   try {
-    // Dev-only debug: log request origin, ip and body to help diagnose 500s
+    console.log("[forgotPassword] Handler reached");
     if (process.env.NODE_ENV === "development") {
       try {
         console.log(
-          "forgotPassword called from Origin=",
-          req.headers.origin,
-          "IP=",
-          req.ip,
-          "body=",
-          req.body
+          "[forgotPassword] Incoming request:", {
+            origin: req.headers.origin,
+            ip: req.ip,
+            body: req.body
+          }
         );
       } catch (e) {
-        console.log("forgotPassword debug log failed", e && e.message);
+        console.log("[forgotPassword] Debug log failed", e && e.message);
       }
     }
     const { email } = req.body;
-    if (!email)
+    console.log("[forgotPassword] Email from body:", email);
+    if (!email) {
+      console.log("[forgotPassword] No email provided");
       return res
         .status(400)
         .json({ success: false, message: "Email is required" });
+    }
 
-    // Use lean() to avoid hydrating a Mongoose document (which can fail if
-    // the stored document has fields that don't match the schema types
-    // (e.g. address stored as an object while schema expects a string)).
     const user = await User.findOne({ email: email.toLowerCase() }).lean();
-    if (!user)
+    console.log("[forgotPassword] User found:", !!user);
+    if (!user) {
+      console.log("[forgotPassword] No user found for email");
       return res.status(200).json({
         success: true,
         message: "If an account exists, a reset email has been sent.",
       });
+    }
 
     const token = generateResetToken();
     const expires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    console.log("[forgotPassword] Generated token:", token);
 
-    // Store only a hash of the token in DB using an atomic update to avoid
-    // triggering full-document validation when stored fields don't match the
-    // current schema (some legacy documents store objects for address or
-    // drugLicenseImage). This avoids Cast/Validation errors during save.
     await User.updateOne(
       { _id: user._id },
       {
@@ -63,11 +62,12 @@ async function forgotPassword(req, res) {
         },
       }
     );
+    console.log("[forgotPassword] Token and expiry saved to user");
 
-    // Build reset URL - front-end should have a route to handle this path
     const resetUrl = `${
       process.env.FRONTEND_BASE_URL || "http://localhost:5173"
     }/reset-password?token=${token}&email=${encodeURIComponent(user.email)}`;
+    console.log("[forgotPassword] Reset URL:", resetUrl);
 
     const html = `<p>You (or someone else) requested a password reset.</p>
       <p>Click this link to reset your password. This link expires in 15 minutes:</p>
@@ -75,37 +75,34 @@ async function forgotPassword(req, res) {
 
     let mailResult = null;
     try {
+      console.log("[forgotPassword] About to call sendMail for:", user.email);
       mailResult = await sendMail({
         to: user.email,
         subject: "Password reset request",
         html,
         text: `Reset your password using this link: ${resetUrl}`,
       });
+      console.log("[forgotPassword] sendMail result:", mailResult);
     } catch (mailErr) {
-      // Log mail errors but do not expose them to the client to avoid user enumeration
-      console.error("forgotPassword: sendMail failed", mailErr);
-      // Continue: we will still return a generic success response so clients can't
-      // use this endpoint to detect whether an email exists or to probe mail server state.
+      console.error("[forgotPassword] sendMail failed", mailErr);
       mailResult = { previewUrl: null };
     }
 
-    // Log preview URL server-side (useful during development with Ethereal)
     try {
       const previewUrl =
         mailResult && mailResult.previewUrl ? mailResult.previewUrl : null;
-      if (previewUrl) console.log("Ethereal preview URL:", previewUrl);
+      if (previewUrl) console.log("[forgotPassword] Ethereal preview URL:", previewUrl);
     } catch (e) {
       // ignore
     }
 
-    // Always return a generic success response to avoid user enumeration
+    console.log("[forgotPassword] Responding to client");
     res.json({
       success: true,
       message: "If an account exists, a reset email has been sent.",
     });
   } catch (err) {
-    console.error("forgotPassword error:", err);
-    // In development, include the error message/stack to aid debugging.
+    console.error("[forgotPassword] error:", err);
     if (process.env.NODE_ENV === "development") {
       return res.status(500).json({
         success: false,

@@ -1,3 +1,4 @@
+require("dotenv").config();
 const nodemailer = require("nodemailer");
 
 function parseBool(val) {
@@ -13,17 +14,14 @@ async function createTransporter() {
   const emailPort = process.env.EMAIL_PORT || process.env.SMTP_PORT;
   const emailSecure = process.env.EMAIL_SECURE || process.env.SMTP_SECURE;
   const sendgridKey = process.env.SENDGRID_API_KEY || process.env.SENDGRID_KEY;
-
-  const useEthereal = parseBool(process.env.USE_ETHEREAL) || !emailUser;
+  const useEthereal = parseBool(process.env.USE_ETHEREAL);
   const isProduction = process.env.NODE_ENV === "production";
-
   if (isProduction && !emailUser) {
     throw new Error(
       "Mailer: SMTP credentials missing in production (EMAIL_USER or SMTP_USER)"
     );
   }
-
-  // If dev and Ethereal requested OR no SMTP credentials present -> Ethereal
+  // Only use Ethereal if USE_ETHEREAL=true explicitly
   if (useEthereal) {
     const testAccount = await nodemailer.createTestAccount();
     const transporter = nodemailer.createTransport({
