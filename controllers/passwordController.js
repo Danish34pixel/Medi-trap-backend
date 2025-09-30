@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
+const Stockist = require("../models/Stockist");
 const { sendMail } = require("../utils/mailer");
 
 // Generate a secure random token (hex)
@@ -19,13 +20,11 @@ async function forgotPassword(req, res) {
     console.log("[forgotPassword] Handler reached");
     if (process.env.NODE_ENV === "development") {
       try {
-        console.log(
-          "[forgotPassword] Incoming request:", {
-            origin: req.headers.origin,
-            ip: req.ip,
-            body: req.body
-          }
-        );
+        console.log("[forgotPassword] Incoming request:", {
+          origin: req.headers.origin,
+          ip: req.ip,
+          body: req.body,
+        });
       } catch (e) {
         console.log("[forgotPassword] Debug log failed", e && e.message);
       }
@@ -39,9 +38,21 @@ async function forgotPassword(req, res) {
         .json({ success: false, message: "Email is required" });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).lean();
-    console.log("[forgotPassword] User found:", !!user);
-    if (!user) {
+    // Try to find the account in User first, then in Stockist.
+    const normalizedEmail = email.toLowerCase();
+    let account = await User.findOne({ email: normalizedEmail }).lean();
+    let accountModel = User;
+    if (!account) {
+      account = await Stockist.findOne({ email: normalizedEmail }).lean();
+      accountModel = Stockist;
+    }
+    console.log(
+      "[forgotPassword] Account found:",
+      !!account,
+      "model:",
+      accountModel.modelName
+    );
+    if (!account) {
       console.log("[forgotPassword] No user found for email");
       return res.status(200).json({
         success: true,
@@ -53,8 +64,9 @@ async function forgotPassword(req, res) {
     const expires = Date.now() + 15 * 60 * 1000; // 15 minutes
     console.log("[forgotPassword] Generated token:", token);
 
-    await User.updateOne(
-      { _id: user._id },
+    // Save the hashed token and expiry on whichever model owns the account.
+    await accountModel.updateOne(
+      { _id: account._id },
       {
         $set: {
           resetPasswordToken: hashToken(token),
@@ -62,11 +74,15 @@ async function forgotPassword(req, res) {
         },
       }
     );
-    console.log("[forgotPassword] Token and expiry saved to user");
+    console.log(
+      "[forgotPassword] Token and expiry saved to account (model:",
+      accountModel.modelName,
+      ")"
+    );
 
     const resetUrl = `${
       process.env.FRONTEND_BASE_URL || "http://localhost:5173"
-    }/reset-password?token=${token}&email=${encodeURIComponent(user.email)}`;
+    }/reset-password?token=${token}&email=${encodeURIComponent(account.email)}`;
     console.log("[forgotPassword] Reset URL:", resetUrl);
 
     const html = `<p>You (or someone else) requested a password reset.</p>
@@ -75,9 +91,12 @@ async function forgotPassword(req, res) {
 
     let mailResult = null;
     try {
-      console.log("[forgotPassword] About to call sendMail for:", user.email);
+      console.log(
+        "[forgotPassword] About to call sendMail for:",
+        account.email
+      );
       mailResult = await sendMail({
-        to: user.email,
+        to: account.email,
         subject: "Password reset request",
         html,
         text: `Reset your password using this link: ${resetUrl}`,
@@ -91,7 +110,8 @@ async function forgotPassword(req, res) {
     try {
       const previewUrl =
         mailResult && mailResult.previewUrl ? mailResult.previewUrl : null;
-      if (previewUrl) console.log("[forgotPassword] Ethereal preview URL:", previewUrl);
+      if (previewUrl)
+        console.log("[forgotPassword] Ethereal preview URL:", previewUrl);
     } catch (e) {
       // ignore
     }
