@@ -76,11 +76,122 @@ router.post("/email-check", async (req, res) => {
     return res.json({ success: true, result });
   } catch (err) {
     console.error("/debug/email-check error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Email check failed",
+      error: err && err.message,
+    });
+  }
+});
+
+// Protected helper to fetch image headers and a small range from Cloudinary to diagnose
+// network/TLS issues. Restricted to Cloudinary domains to avoid open proxy.
+router.post("/fetch-image", async (req, res) => {
+  try {
+    const token = req.headers["x-debug-token"] || "";
+    if (!process.env.DEBUG_TOKEN) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Image fetch disabled (no DEBUG_TOKEN set).",
+        });
+    }
+    if (!token || token !== process.env.DEBUG_TOKEN) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid debug token" });
+    }
+
+    const { url } = req.body || {};
+    if (!url || typeof url !== "string")
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing 'url' in body" });
+
+    // Allow only Cloudinary hosts
+    const allowedHostPattern = /https:\/\/(?:[a-z0-9\-]+\.)*cloudinary\.com\//i;
+    if (!allowedHostPattern.test(url)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Only Cloudinary URLs are allowed" });
+    }
+
+    // Use global fetch (Node 18+) where available; otherwise fall back to https request
+    const doFetch = async (method, extraHeaders = {}) => {
+      if (typeof fetch === "function") {
+        const resp = await fetch(url, { method, headers: extraHeaders });
+        const headers = {};
+        resp.headers.forEach((v, k) => (headers[k] = v));
+        const body =
+          method === "GET" ? await resp.arrayBuffer().catch(() => null) : null;
+        return {
+          status: resp.status,
+          ok: resp.ok,
+          headers,
+          bodyLength: body ? body.byteLength : null,
+        };
+      }
+      // Fallback: use https.get and only read a small chunk for GET
+      const https = require("https");
+      return new Promise((resolve, reject) => {
+        const parsed = new URL(url);
+        const opts = {
+          method,
+          hostname: parsed.hostname,
+          path: parsed.pathname + parsed.search,
+          headers: extraHeaders,
+        };
+        const req = https.request(opts, (r) => {
+          const headers = r.headers || {};
+          let length = 0;
+          if (method === "GET") {
+            r.on("data", (chunk) => {
+              length += chunk.length;
+              // stop after reading ~16KB
+              if (length > 16 * 1024) req.destroy();
+            });
+          }
+          r.on("end", () =>
+            resolve({
+              status: r.statusCode,
+              ok: r.statusCode >= 200 && r.statusCode < 400,
+              headers,
+              bodyLength: length,
+            })
+          );
+          r.on("error", (e) => reject(e));
+        });
+        req.on("error", (e) => reject(e));
+        req.end();
+      });
+    };
+
+    // HEAD
+    let headResult = null;
+    try {
+      headResult = await doFetch("HEAD");
+    } catch (headErr) {
+      // capture the error and continue to attempt a ranged GET
+      headResult = { error: headErr && headErr.message };
+    }
+
+    // Small ranged GET to detect partial/content-range issues
+    let getResult = null;
+    try {
+      getResult = await doFetch("GET", { Range: "bytes=0-16383" });
+    } catch (getErr) {
+      getResult = { error: getErr && getErr.message };
+    }
+
+    return res.json({ success: true, url, head: headResult, get: getResult });
+  } catch (err) {
+    console.error("/debug/fetch-image error:", err);
     return res
       .status(500)
       .json({
         success: false,
-        message: "Email check failed",
+        message: "fetch-image failed",
         error: err && err.message,
       });
   }

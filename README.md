@@ -330,6 +330,24 @@ curl -X POST https://<your-backend>/debug/email-check \
 
 The endpoint will attempt to verify the transporter and send a small test message using the same environment credentials your app uses. It returns the `messageId` and accepted/rejected arrays so you can confirm whether the mail was accepted by the SMTP provider.
 
+### Diagnostic: fetch image from Cloudinary
+
+If users see network errors when loading images (for example `net::ERR_CONNECTION_RESET`), you can run a server-side diagnostic to inspect headers and attempt a small ranged download from Cloudinary. This is useful to determine whether the deployed host can reach Cloudinary and whether intermediate proxies are truncating connections.
+
+- Set `DEBUG_TOKEN` as described above.
+- POST to `/debug/fetch-image` with JSON `{ "url": "https://res.cloudinary.com/your-cloud/.../image.png" }` and header `x-debug-token: <token>`.
+
+Example:
+
+```bash
+curl -X POST https://<your-backend>/debug/fetch-image \
+  -H "Content-Type: application/json" \
+  -H "x-debug-token: some-long-secret-token" \
+  -d '{"url":"https://res.cloudinary.com/dspnmgzwh/image/upload/v1759225595/t1epeuj4f4mqtkrx412x.png"}'
+```
+
+The response will include the HEAD status/headers and the small ranged GET result (status, headers, and how many bytes were received). If you see connection resets or truncated responses from the deployed host but not locally, inspect your hosting provider's network/firewall or contact Cloudinary support with the timestamps.
+
 ## 📝 License
 
 This project is licensed under the MIT License.
