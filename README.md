@@ -291,6 +291,22 @@ The server provides detailed logging for debugging:
 - MongoDB connection status
 - File upload status
 
+### Forgot-password / Email troubleshooting
+
+- Ensure `FRONTEND_BASE_URL` (or `FRONTEND_URL`) is set in production to your frontend origin, e.g.:
+
+```env
+FRONTEND_BASE_URL=https://medi-trap-frontend.vercel.app
+```
+
+- To help debug email delivery from the deployed process, set `DEBUG_EMAIL=true` temporarily. When enabled the `POST /api/auth/forgot-password` response will include a `debug.mailError` field containing the mailer error string (safe to use only temporarily in non-public environments).
+
+```env
+DEBUG_EMAIL=true
+```
+
+Remember to remove `DEBUG_EMAIL` after diagnosing the issue so you don't leak internal errors to clients.
+
 ## 📝 License
 
 This project is licensed under the MIT License.

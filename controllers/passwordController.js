@@ -80,9 +80,17 @@ async function forgotPassword(req, res) {
       ")"
     );
 
-    const resetUrl = `${
-      process.env.FRONTEND_BASE_URL || "http://localhost:5173"
-    }/reset-password?token=${token}&email=${encodeURIComponent(account.email)}`;
+    // Prefer an explicit FRONTEND_BASE_URL, then FRONTEND_URL (single URL),
+    // then fall back to the known Vercel frontend. This avoids generating
+    // localhost links in deployed environments when only FRONTEND_URL is set.
+    const frontendBase =
+      process.env.FRONTEND_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      "https://medi-trap-frontend.vercel.app";
+    const normalizedBase = String(frontendBase).replace(/\/+$/, "");
+    const resetUrl = `${normalizedBase}/reset-password?token=${token}&email=${encodeURIComponent(
+      account.email
+    )}`;
     console.log("[forgotPassword] Reset URL:", resetUrl);
 
     const html = `<p>You (or someone else) requested a password reset.</p>
@@ -103,8 +111,24 @@ async function forgotPassword(req, res) {
       });
       console.log("[forgotPassword] sendMail result:", mailResult);
     } catch (mailErr) {
-      console.error("[forgotPassword] sendMail failed", mailErr);
+      console.error(
+        "[forgotPassword] sendMail failed",
+        mailErr && mailErr.message
+      );
+      // Keep the default behavior of not revealing delivery status to callers.
+      // However, allow opt-in debug output in the response when DEBUG_EMAIL=true.
       mailResult = { previewUrl: null };
+      if (
+        process.env.DEBUG_EMAIL === "true" ||
+        process.env.NODE_ENV === "development"
+      ) {
+        // Attach debug field to response so operators can see why delivery failed.
+        return res.status(200).json({
+          success: true,
+          message: "If an account exists, a reset email has been sent.",
+          debug: { mailError: mailErr && (mailErr.message || String(mailErr)) },
+        });
+      }
     }
 
     try {
