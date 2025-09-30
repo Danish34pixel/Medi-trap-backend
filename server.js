@@ -95,8 +95,9 @@ const corsOptions = {
   // Allow the production frontend by default (Vercel URL). The FRONTEND_URL
   // environment variable can override this for other deployments.
   origin: [
-    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app",
+    "https://medi-trap-frontend.vercel.app",
     "http://localhost:5173",
+    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app"
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
