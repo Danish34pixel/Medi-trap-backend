@@ -213,34 +213,52 @@ async function forgotPassword(req, res) {
 // body: { token, email, newPassword }
 async function resetPassword(req, res) {
   try {
-    const { token, email, newPassword } = req.body;
-    if (!token || !email || !newPassword)
+  // Accept token/email from either body (POST) or query (GET)
+  const token = req.body.token || req.query.token;
+  const email = req.body.email || req.query.email;
+  const newPassword = req.body.newPassword;
+  console.log("[resetPassword] Called with:", { token, email });
+    console.log("[resetPassword] Called with:", { token, email });
+    if (!token || !email || !newPassword) {
+      console.log("[resetPassword] Missing required fields");
       return res.status(400).json({
         success: false,
         message: "token, email and newPassword are required",
       });
+    }
 
-    // Find user by email first, then compare hashed token in timing-safe manner
     const user = await User.findOne({ email: email.toLowerCase() }).select(
       "+resetPasswordToken +resetPasswordExpires"
     );
-    if (!user)
+    console.log("[resetPassword] User found:", !!user);
+    if (!user) {
+      console.log("[resetPassword] No user found for email");
       return res
         .status(400)
         .json({ success: false, message: "Invalid token or email" });
+    }
 
+    console.log("[resetPassword] Token in DB:", user.resetPasswordToken);
+    console.log("[resetPassword] Expiry in DB:", user.resetPasswordExpires);
+    console.log("[resetPassword] Current time:", new Date());
     if (
       !user.resetPasswordExpires ||
       user.resetPasswordExpires.getTime() < Date.now()
     ) {
+      console.log("[resetPassword] Token expired");
       return res.status(400).json({ success: false, message: "Token expired" });
     }
 
     const hashed = hashToken(token);
     const stored = user.resetPasswordToken || "";
+    console.log("[resetPassword] Hashed incoming token:", hashed);
+    console.log("[resetPassword] Stored token:", stored);
     const bufA = Buffer.from(hashed);
     const bufB = Buffer.from(stored);
-    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+    const timingSafe = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+    console.log("[resetPassword] Token match:", timingSafe);
+    if (!timingSafe) {
+      console.log("[resetPassword] Invalid token or email");
       return res
         .status(400)
         .json({ success: false, message: "Invalid token or email" });
@@ -255,9 +273,10 @@ async function resetPassword(req, res) {
     user.resetPasswordExpires = undefined;
     await user.save();
 
+    console.log("[resetPassword] Password reset successful");
     res.json({ success: true, message: "Password reset successful" });
   } catch (err) {
-    console.error("resetPassword error:", err);
+    console.error("[resetPassword] error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 }
