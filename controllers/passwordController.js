@@ -141,6 +141,20 @@ async function forgotPassword(req, res) {
     }
 
     console.log("[forgotPassword] Responding to client");
+    // Optionally include debug info (reset URL / preview URL) when debugging is enabled.
+    if (
+      process.env.DEBUG_EMAIL === "true" ||
+      process.env.NODE_ENV === "development"
+    ) {
+      const previewUrl =
+        mailResult && mailResult.previewUrl ? mailResult.previewUrl : null;
+      return res.json({
+        success: true,
+        message: "If an account exists, a reset email has been sent.",
+        debug: { resetUrl, previewUrl },
+      });
+    }
+
     res.json({
       success: true,
       message: "If an account exists, a reset email has been sent.",
