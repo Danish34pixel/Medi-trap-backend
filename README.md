@@ -307,6 +307,29 @@ DEBUG_EMAIL=true
 
 Remember to remove `DEBUG_EMAIL` after diagnosing the issue so you don't leak internal errors to clients.
 
+### Production SMTP diagnostic endpoint
+
+If you cannot SSH into the host, you can run a protected SMTP diagnostic from the running process using the `/debug/email-check` endpoint.
+
+- Set a secret token in the deployment environment:
+
+```env
+DEBUG_TOKEN=some-long-secret-token
+```
+
+- Deploy the update. Then call the endpoint (from a safe environment) with the header `x-debug-token: <token>` and a JSON body `{ "to": "you@example.com" }`.
+
+Example curl (use in your machine or Render's deploy console):
+
+```bash
+curl -X POST https://<your-backend>/debug/email-check \
+  -H "Content-Type: application/json" \
+  -H "x-debug-token: some-long-secret-token" \
+  -d '{"to":"you@example.com"}'
+```
+
+The endpoint will attempt to verify the transporter and send a small test message using the same environment credentials your app uses. It returns the `messageId` and accepted/rejected arrays so you can confirm whether the mail was accepted by the SMTP provider.
+
 ## 📝 License
 
 This project is licensed under the MIT License.

@@ -83,11 +83,46 @@ async function forgotPassword(req, res) {
     // Prefer an explicit FRONTEND_BASE_URL, then FRONTEND_URL (single URL),
     // then fall back to the known Vercel frontend. This avoids generating
     // localhost links in deployed environments when only FRONTEND_URL is set.
-    const frontendBase =
-      process.env.FRONTEND_BASE_URL ||
-      process.env.FRONTEND_URL ||
-      "https://medi-trap-frontend.vercel.app";
-    const normalizedBase = String(frontendBase).replace(/\/+$/, "");
+    const rawFrontendBase =
+      process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || null;
+    // Default Vercel frontend URL
+    const defaultFrontend = "https://medi-trap-frontend.vercel.app";
+    // Helper to check dev/localhost-like values
+    function looksLocalhost(u) {
+      if (!u) return false;
+      try {
+        return /localhost|127\.0\.0\.1|0\.0\.0\.0|:5173|:3000/.test(String(u));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // Start with explicit env value or default
+    let normalizedBase = rawFrontendBase
+      ? String(rawFrontendBase).replace(/\/+$/, "")
+      : defaultFrontend;
+
+    // If the configured base looks like a local/dev URL, try to use the incoming Origin
+    // header (only if it's in the runtime allowlist exposed as global.__ALLOWED_ORIGINS__)
+    const incomingOrigin =
+      req.headers && req.headers.origin
+        ? String(req.headers.origin).replace(/\/+$/, "")
+        : null;
+    try {
+      const allowed = Array.isArray(global.__ALLOWED_ORIGINS__)
+        ? global.__ALLOWED_ORIGINS__
+        : [];
+      if (
+        looksLocalhost(normalizedBase) &&
+        incomingOrigin &&
+        allowed.includes(incomingOrigin)
+      ) {
+        normalizedBase = incomingOrigin;
+      }
+    } catch (e) {
+      // ignore and keep normalizedBase
+    }
+
     const resetUrl = `${normalizedBase}/reset-password?token=${token}&email=${encodeURIComponent(
       account.email
     )}`;
@@ -108,6 +143,7 @@ async function forgotPassword(req, res) {
         subject: "Password reset request",
         html,
         text: `Reset your password using this link: ${resetUrl}`,
+        from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       });
       console.log("[forgotPassword] sendMail result:", mailResult);
     } catch (mailErr) {

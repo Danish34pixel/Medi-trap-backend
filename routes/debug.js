@@ -1,5 +1,12 @@
 const express = require("express");
 const router = express.Router();
+const path = require("path");
+const prodMailer = require(path.join(
+  __dirname,
+  "..",
+  "utils",
+  "prodMailerHelper"
+));
 
 function redact(val) {
   if (!val) return null;
@@ -31,6 +38,51 @@ router.get("/info", (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: "debug error" });
+  }
+});
+
+// Protected endpoint to run an SMTP check from the running process.
+// Accepts POST { to: "recipient@example.com" } and requires header
+// `x-debug-token` to equal process.env.DEBUG_TOKEN. This avoids exposing
+// an unauthenticated send endpoint in public deployments.
+router.post("/email-check", async (req, res) => {
+  try {
+    const token = req.headers["x-debug-token"] || "";
+    if (!process.env.DEBUG_TOKEN) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Email check endpoint disabled on this deployment (no DEBUG_TOKEN set).",
+      });
+    }
+    if (!token || token !== process.env.DEBUG_TOKEN) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid debug token" });
+    }
+
+    const to = req.body && req.body.to ? String(req.body.to).trim() : null;
+    if (!to)
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing 'to' in body" });
+
+    // Use helper to create transporter and send a lightweight test message.
+    const result = await prodMailer.sendTestMail({
+      to,
+      subject: "Prod SMTP check",
+      text: "This is a production SMTP diagnostic message.",
+    });
+    return res.json({ success: true, result });
+  } catch (err) {
+    console.error("/debug/email-check error:", err);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Email check failed",
+        error: err && err.message,
+      });
   }
 });
 
