@@ -1,5 +1,5 @@
 const dotenv = require("dotenv");
-dotenv.config()
+dotenv.config();
 const isDevelopment = process.env.NODE_ENV === "development";
 // Load environment variables. Resolve files relative to this file's
 // directory first (Backend/), then fall back to the process cwd. This
@@ -133,6 +133,9 @@ const allowedOrigins = new Set(
     .map((s) => s.replace(/\/+$/, ""))
 );
 
+// Expose the current allowlist to runtime (debugging). Do not leak secrets.
+global.__ALLOWED_ORIGINS__ = Array.from(allowedOrigins);
+
 // Dynamic CORS middleware: reflect the incoming Origin when allowed.
 app.use(
   cors({
@@ -164,6 +167,14 @@ app.use(
 
 // Debug: print allowed origins at startup
 console.log("Allowed CORS origins:", Array.from(allowedOrigins));
+
+// Mount debug route (temporary) to inspect runtime env and allowedOrigins
+try {
+  const debugRouter = require("./routes/debug");
+  app.use("/debug", debugRouter);
+} catch (e) {
+  console.warn("Debug route not mounted:", e && e.message);
+}
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;

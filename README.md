@@ -291,6 +291,63 @@ The server provides detailed logging for debugging:
 - MongoDB connection status
 - File upload status
 
+### Forgot-password / Email troubleshooting
+
+- Ensure `FRONTEND_BASE_URL` (or `FRONTEND_URL`) is set in production to your frontend origin, e.g.:
+
+```env
+FRONTEND_BASE_URL=https://medi-trap-frontend.vercel.app
+```
+
+- To help debug email delivery from the deployed process, set `DEBUG_EMAIL=true` temporarily. When enabled the `POST /api/auth/forgot-password` response will include a `debug.mailError` field containing the mailer error string (safe to use only temporarily in non-public environments).
+
+```env
+DEBUG_EMAIL=true
+```
+
+Remember to remove `DEBUG_EMAIL` after diagnosing the issue so you don't leak internal errors to clients.
+
+### Production SMTP diagnostic endpoint
+
+If you cannot SSH into the host, you can run a protected SMTP diagnostic from the running process using the `/debug/email-check` endpoint.
+
+- Set a secret token in the deployment environment:
+
+```env
+DEBUG_TOKEN=some-long-secret-token
+```
+
+- Deploy the update. Then call the endpoint (from a safe environment) with the header `x-debug-token: <token>` and a JSON body `{ "to": "you@example.com" }`.
+
+Example curl (use in your machine or Render's deploy console):
+
+```bash
+curl -X POST https://<your-backend>/debug/email-check \
+  -H "Content-Type: application/json" \
+  -H "x-debug-token: some-long-secret-token" \
+  -d '{"to":"you@example.com"}'
+```
+
+The endpoint will attempt to verify the transporter and send a small test message using the same environment credentials your app uses. It returns the `messageId` and accepted/rejected arrays so you can confirm whether the mail was accepted by the SMTP provider.
+
+### Diagnostic: fetch image from Cloudinary
+
+If users see network errors when loading images (for example `net::ERR_CONNECTION_RESET`), you can run a server-side diagnostic to inspect headers and attempt a small ranged download from Cloudinary. This is useful to determine whether the deployed host can reach Cloudinary and whether intermediate proxies are truncating connections.
+
+- Set `DEBUG_TOKEN` as described above.
+- POST to `/debug/fetch-image` with JSON `{ "url": "https://res.cloudinary.com/your-cloud/.../image.png" }` and header `x-debug-token: <token>`.
+
+Example:
+
+```bash
+curl -X POST https://<your-backend>/debug/fetch-image \
+  -H "Content-Type: application/json" \
+  -H "x-debug-token: some-long-secret-token" \
+  -d '{"url":"https://res.cloudinary.com/dspnmgzwh/image/upload/v1759225595/t1epeuj4f4mqtkrx412x.png"}'
+```
+
+The response will include the HEAD status/headers and the small ranged GET result (status, headers, and how many bytes were received). If you see connection resets or truncated responses from the deployed host but not locally, inspect your hosting provider's network/firewall or contact Cloudinary support with the timestamps.
+
 ## 📝 License
 
 This project is licensed under the MIT License.
