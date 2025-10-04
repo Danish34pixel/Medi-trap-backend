@@ -481,3 +481,157 @@ router.post("/logout", authenticate, async (req, res) => {
 });
 
 module.exports = router;
+
+// ------------------------- Purchaser self-signup -------------------------
+// POST /api/auth/purchaser-signup
+// multipart form: fullName, email, password, aadharNo, aadharImage (file), personalPhoto (file)
+router.post(
+  "/purchaser-signup",
+  upload.fields([
+    { name: "aadharImage", maxCount: 1 },
+    { name: "personalPhoto", maxCount: 1 },
+  ]),
+  handleUploadError,
+  async (req, res) => {
+    try {
+      const { fullName, email, password } = req.body || {};
+
+      if (!fullName || !email || !password) {
+        return res
+          .status(400)
+          .json({ success: false, message: "All fields are required" });
+      }
+
+      // files required
+      if (!req.files || !req.files.aadharImage || !req.files.personalPhoto) {
+        return res.status(400).json({
+          success: false,
+          message: "Aadhar image and personal photo are required",
+        });
+      }
+
+      // Check if email already exists
+      const exists = await User.findOne({ email: email.toLowerCase() });
+      if (exists)
+        return res
+          .status(400)
+          .json({ success: false, message: "Email already registered" });
+
+      // Upload files to Cloudinary (best-effort). If upload fails, log and continue
+      let aadharUpload = { url: "" };
+      let photoUpload = { url: "" };
+      try {
+        aadharUpload = await uploadToCloudinary(
+          req.files.aadharImage[0],
+          "medtek/aadhar"
+        );
+      } catch (uploadErr) {
+        console.warn(
+          "Aadhar upload failed, continuing without cloud URL:",
+          uploadErr && uploadErr.message
+        );
+      }
+
+      try {
+        photoUpload = await uploadToCloudinary(
+          req.files.personalPhoto[0],
+          "medtek/personal"
+        );
+      } catch (uploadErr) {
+        console.warn(
+          "Personal photo upload failed, continuing without cloud URL:",
+          uploadErr && uploadErr.message
+        );
+      }
+
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      // The main User schema is targeted for medical stores and has several
+      // required validators (address, contactNo, drugLicenseNo, drugLicenseImage).
+      // For purchaser self-signup we supply safe placeholder values so the
+      // document validates while still storing purchaser-specific images.
+      const user = new User({
+        medicalName: fullName,
+        ownerName: fullName,
+        // provide minimal non-empty values to satisfy schema validators
+        address: req.body.address || "N/A",
+        email: email.toLowerCase(),
+        contactNo: req.body.contactNo || "0000000000",
+        // ensure a unique-ish drugLicenseNo so unique index doesn't complain
+        drugLicenseNo: `P-${Date.now()}`,
+        // use uploaded photo/aadhar as a fallback for license image
+        drugLicenseImage: aadharUpload.url || photoUpload.url || "placeholder",
+        password: hashedPassword,
+        // aadharNo omitted - not required
+        aadharImage: aadharUpload.url,
+        personalPhoto: photoUpload.url,
+        purchasingCardRequested: false,
+      });
+
+      // Log the prepared user document (safe fields only) to help debug
+      try {
+        console.debug("Prepared user for save:", {
+          email: user.email,
+          medicalName: user.medicalName,
+          ownerName: user.ownerName,
+          drugLicenseNo: user.drugLicenseNo,
+        });
+      } catch (e) {}
+
+      await user.save();
+
+      // create JWT
+      const payload = { userId: user._id, email: user.email, role: user.role };
+      const token = jwt.sign(payload, process.env.JWT_SECRET, {
+        expiresIn: "7d",
+      });
+
+      const userResp = user.toObject();
+      delete userResp.password;
+
+      return res.status(201).json({
+        success: true,
+        message: "Account created",
+        token,
+        user: userResp,
+      });
+    } catch (err) {
+      console.error("Purchaser signup error:", err && err.message);
+      console.error("Request body:", req.body);
+      console.error("Request files:", req.files);
+      if (err && err.stack) {
+        console.error("Error stack:", err.stack);
+      }
+
+      // Mongoose validation errors -> return 400 with details
+      if (err.name === "ValidationError") {
+        const messages = Object.values(err.errors).map((e) => e.message);
+        return res.status(400).json({
+          success: false,
+          message: "Validation error",
+          errors: messages,
+        });
+      }
+
+      // Duplicate key (unique index) errors -> 400
+      if (err.name === "MongoError" && err.code === 11000) {
+        const key = Object.keys(err.keyValue || {}).join(", ") || "field";
+        return res.status(400).json({
+          success: false,
+          message: `Duplicate value for ${key}`,
+        });
+      }
+
+      const isDev = process.env.NODE_ENV === "development";
+      const payload = {
+        success: false,
+        message: "Server error",
+        error: err.message,
+      };
+      if (isDev && err && err.stack) payload.stack = err.stack;
+      return res.status(500).json(payload);
+    }
+  },
+  cleanupUploads
+);

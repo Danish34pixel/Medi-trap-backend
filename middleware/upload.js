@@ -78,9 +78,34 @@ const handleUploadError = (error, req, res, next) => {
 const cleanupUploads = (req, res, next) => {
   // Clean up uploaded files after response is sent
   res.on("finish", () => {
+    // single-file field
     if (req.file && req.file.path) {
       fs.unlink(req.file.path, (err) => {
         if (err) console.error("Error deleting uploaded file:", err);
+      });
+    }
+
+    // multiple fields (upload.fields) stored in req.files as arrays
+    if (req.files) {
+      const removeIf = (f) => {
+        try {
+          if (f && f.path) fs.unlinkSync(f.path);
+        } catch (err) {
+          // log and continue
+          console.error(
+            "Error deleting uploaded file (req.files):",
+            err && err.message
+          );
+        }
+      };
+
+      Object.keys(req.files).forEach((key) => {
+        const val = req.files[key];
+        if (Array.isArray(val)) {
+          val.forEach(removeIf);
+        } else if (val && val.path) {
+          removeIf(val);
+        }
       });
     }
   });

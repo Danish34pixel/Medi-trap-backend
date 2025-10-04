@@ -17,6 +17,12 @@ router.post("/request", authenticate, async (req, res) => {
         .status(401)
         .json({ success: false, message: "Not authenticated" });
 
+    console.debug("Purchasing-card request by:", {
+      requesterId: requester && requester._id,
+      email: requester && requester.email,
+    });
+    console.debug("Request body:", req.body);
+
     const { stockistIds } = req.body || {};
     if (!Array.isArray(stockistIds) || stockistIds.length < 3) {
       return res.status(400).json({
@@ -48,39 +54,48 @@ router.post("/request", authenticate, async (req, res) => {
     });
     await reqDoc.save();
 
+    console.debug("PurchaseCardRequest saved:", { id: reqDoc._id });
+
     // Mark user as requested for quick UI feedback
     requester.purchasingCardRequested = true;
     await requester.save();
 
-    // Notify selected stockists via email (best-effort)
+    // Notify selected stockists via email (best-effort). Do not await each
+    // sendMail serially to avoid long blocking operations; run them and
+    // catch errors so promise rejections don't escape.
     for (const s of stockists) {
+      if (!s || !s.email) continue;
       try {
-        if (s.email) {
-          // find token for this stockist
-          const tokenObj = reqDoc.approvalTokens.find(
-            (t) => String(t.stockist) === String(s._id)
-          );
-          const approveLink = tokenObj
-            ? `${
-                process.env.FRONTEND_URL || "http://localhost:5173"
-              }/approve?token=${tokenObj.token}`
-            : `${process.env.FRONTEND_URL || "http://localhost:5173"}/`;
+        const tokenObj = reqDoc.approvalTokens.find(
+          (t) => String(t.stockist) === String(s._id)
+        );
+        const approveLink = tokenObj
+          ? `${
+              process.env.FRONTEND_URL || "http://localhost:5173"
+            }/approve?token=${tokenObj.token}`
+          : `${process.env.FRONTEND_URL || "http://localhost:5173"}/`;
 
-          await sendMail({
-            to: s.email,
-            subject: "Purchasing Card Approval Request",
-            html: `<p>Hello ${s.name || s.contactPerson || "Stockist"},</p>
+        // fire-and-forget with explicit catch
+        sendMail({
+          to: s.email,
+          subject: "Purchasing Card Approval Request",
+          html: `<p>Hello ${s.name || s.contactPerson || "Stockist"},</p>
                   <p>${
                     requester.medicalName || requester.email
                   } has requested a Purchasing Card and selected you as a verifier. You may approve the request by clicking the button below.</p>
                   <p><a href="${approveLink}" style="display:inline-block;padding:10px 14px;background:#0ea5a4;color:white;border-radius:6px;text-decoration:none">Approve Request</a></p>
                   <p>Request ID: ${reqDoc._id}</p>`,
-          });
-        }
+        }).catch((mailErr) => {
+          console.warn(
+            "Failed to notify stockist (async):",
+            s._id,
+            mailErr && mailErr.message
+          );
+        });
       } catch (mailErr) {
         console.warn(
-          "Failed to notify stockist",
-          s._id,
+          "Failed to schedule notification for stockist",
+          s && s._id,
           mailErr && mailErr.message
         );
       }

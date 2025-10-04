@@ -76,6 +76,17 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Optional purchaser-specific fields for self-signup flows
+    aadharNo: {
+      type: String,
+      trim: true,
+    },
+    aadharImage: {
+      type: String,
+    },
+    personalPhoto: {
+      type: String,
+    },
     role: {
       type: String,
       // allow 'stockist' role so stockist accounts can be represented and granted rights

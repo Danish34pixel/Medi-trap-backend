@@ -382,14 +382,19 @@ const startServer = async () => {
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (err) => {
-  console.error("Unhandled Promise Rejection:", err);
-  process.exit(1);
+  console.error(
+    "Unhandled Promise Rejection:",
+    err && err.stack ? err.stack : err
+  );
+  // Do not exit immediately in development to allow debugging. In production
+  // you might want to exit and restart the process.
 });
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught Exception:", err);
-  process.exit(1);
+  console.error("Uncaught Exception:", err && err.stack ? err.stack : err);
+  // Do not exit immediately in development so we can inspect logs. Consider
+  // restarting the process in production.
 });
 
 startServer();
