@@ -9,7 +9,9 @@ const {
   handleUploadError,
   cleanupUploads,
 } = require("../middleware/upload");
-const { authenticate } = require("../middleware/auth");
+// Note: a local `authenticate` implementation (with blacklist support)
+// is defined later in this file. Do not import the middleware's
+// `authenticate` here to avoid duplicate declaration/conflict.
 const {
   forgotPassword,
   resetPassword,
@@ -35,6 +37,92 @@ const authLimiter = rateLimit({
 if (!isDevelopment) {
   router.use(authLimiter);
 }
+
+// Token blacklist for invalidation
+const tokenBlacklist = new Set();
+
+// Authenticate middleware (blacklist-aware) - moved up so routes can use it
+const authenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. No token provided.",
+      });
+    }
+
+    const token = authHeader.slice(7);
+
+    // Debug: log a short token snippet to help trace which token the client sent
+    try {
+      console.debug("Auth: tokenSnippet ->", token.slice(0, 12) + "...");
+    } catch (e) {}
+
+    // Check if token is blacklisted
+    if (tokenBlacklist.has(token)) {
+      return res.status(401).json({
+        success: false,
+        message: "Token has been invalidated.",
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Debug: show decoded token payload fields (non-sensitive)
+    try {
+      console.debug("Auth: decoded ->", {
+        userId: decoded && decoded.userId,
+        email: decoded && decoded.email,
+        role: decoded && decoded.role,
+      });
+    } catch (e) {}
+
+    let user = null;
+    try {
+      if (decoded && decoded.role && decoded.role === "stockist") {
+        user = await Stockist.findById(decoded.userId).select("-password");
+      } else {
+        user = await User.findById(decoded.userId).select("-password");
+        if (!user) {
+          user = await Stockist.findById(decoded.userId).select("-password");
+        }
+      }
+    } catch (e) {
+      user = null;
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Token is valid but user no longer exists.",
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token.",
+      });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired.",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Token verification failed.",
+    });
+  }
+};
 
 // @route   POST /api/auth/signup
 // @desc    Register a new medical store
@@ -237,6 +325,7 @@ router.post("/login", async (req, res) => {
 // @access  Private
 router.get("/me", authenticate, async (req, res) => {
   try {
+    console.log(`/api/auth/me called for userId=${req.user && req.user._id}`);
     res.json({
       success: true,
       user: req.user,
@@ -366,5 +455,29 @@ router.put(
   },
   cleanupUploads
 );
+
+// @route   POST /api/auth/logout
+// @desc    Logout user and invalidate token
+// @access  Private
+router.post("/logout", authenticate, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      tokenBlacklist.add(token); // Add token to blacklist
+    }
+
+    res.json({
+      success: true,
+      message: "Logout successful",
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during logout",
+    });
+  }
+});
 
 module.exports = router;

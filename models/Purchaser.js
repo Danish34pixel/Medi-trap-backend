@@ -25,6 +25,12 @@ const PurchaserSchema = new mongoose.Schema(
       type: String, // Cloudinary URL
       required: true,
     },
+    // reference to the user/stockist who created this purchaser
+    createdBy: {
+      type: require("mongoose").Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
   },
   { timestamps: true }
 );

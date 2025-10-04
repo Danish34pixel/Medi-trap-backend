@@ -66,6 +66,16 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Whether the user has been granted a purchasing card (can manage purchasers)
+    hasPurchasingCard: {
+      type: Boolean,
+      default: false,
+    },
+    // When a user requests a purchasing card this flag will be set so admins can review
+    purchasingCardRequested: {
+      type: Boolean,
+      default: false,
+    },
     role: {
       type: String,
       // allow 'stockist' role so stockist accounts can be represented and granted rights

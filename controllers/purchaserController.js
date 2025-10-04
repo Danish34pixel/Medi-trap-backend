@@ -1,4 +1,5 @@
 const Purchaser = require("../models/Purchaser");
+const { authenticate, isAdmin } = require("../middleware/auth");
 const fs = require("fs");
 const path = require("path");
 const { uploadToCloudinary } = require("../config/cloudinary");
@@ -6,6 +7,8 @@ const { uploadToCloudinary } = require("../config/cloudinary");
 // Create purchaser with aadhar image and photo (Cloudinary URLs)
 exports.createPurchaser = async (req, res) => {
   try {
+    // If authentication middleware attached a user, prefer it; otherwise allow anonymous creation
+    const creatorId = req.user && req.user._id;
     const { fullName, address, contactNo } = req.body;
     // Expecting two files: aadharImage and photo
     if (!req.files || !req.files["aadharImage"] || !req.files["photo"]) {
@@ -18,8 +21,14 @@ exports.createPurchaser = async (req, res) => {
     const aadharFile = req.files["aadharImage"][0];
     const photoFile = req.files["photo"][0];
 
-    const aadharUpload = await uploadToCloudinary(aadharFile, "meditrap/purchasers");
-    const photoUpload = await uploadToCloudinary(photoFile, "meditrap/purchasers");
+    const aadharUpload = await uploadToCloudinary(
+      aadharFile,
+      "meditrap/purchasers"
+    );
+    const photoUpload = await uploadToCloudinary(
+      photoFile,
+      "meditrap/purchasers"
+    );
 
     const purchaser = new Purchaser({
       fullName,
@@ -27,6 +36,7 @@ exports.createPurchaser = async (req, res) => {
       contactNo,
       aadharImage: aadharUpload.url,
       photo: photoUpload.url,
+      createdBy: creatorId || undefined,
     });
     await purchaser.save();
     res.status(201).json({ success: true, data: purchaser });
@@ -54,7 +64,19 @@ exports.createPurchaser = async (req, res) => {
 // Get all purchasers
 exports.getPurchasers = async (req, res) => {
   try {
-    const purchasers = await Purchaser.find().sort({ createdAt: -1 });
+    // If requester is admin, return all. Otherwise, return only purchasers created by the user (if authenticated).
+    const requester = req.user;
+    let query = {};
+    if (requester && requester.role === "admin") {
+      query = {};
+    } else if (requester && requester._id) {
+      query = { createdBy: requester._id };
+    } else {
+      // unauthenticated: return none by default to avoid exposing data
+      return res.json({ success: true, data: [] });
+    }
+
+    const purchasers = await Purchaser.find(query).sort({ createdAt: -1 });
     res.json({ success: true, data: purchasers });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -81,13 +103,30 @@ exports.getPurchaser = async (req, res) => {
 exports.deletePurchaser = async (req, res) => {
   try {
     const { id } = req.params;
-    const purchaser = await Purchaser.findByIdAndDelete(id);
+    const requester = req.user;
+    const purchaser = await Purchaser.findById(id);
     if (!purchaser) {
       return res
         .status(404)
         .json({ success: false, message: "Purchaser not found." });
     }
-    res.json({ success: true, message: "Purchaser deleted." });
+
+    // Allow deletion if admin or owner
+    if (
+      requester &&
+      (requester.role === "admin" ||
+        String(purchaser.createdBy) === String(requester._id))
+    ) {
+      await Purchaser.findByIdAndDelete(id);
+      return res.json({ success: true, message: "Purchaser deleted." });
+    }
+
+    return res
+      .status(403)
+      .json({
+        success: false,
+        message: "Not authorized to delete this purchaser.",
+      });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

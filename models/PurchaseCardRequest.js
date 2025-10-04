@@ -1,0 +1,40 @@
+const mongoose = require("mongoose");
+
+const PurchaseCardRequestSchema = new mongoose.Schema(
+  {
+    requester: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    stockists: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "Stockist", required: true },
+    ],
+    approvals: [
+      {
+        stockist: { type: mongoose.Schema.Types.ObjectId, ref: "Stockist" },
+        approvedAt: Date,
+      },
+    ],
+    // Per-stockist one-click approval tokens (for email links)
+    approvalTokens: [
+      {
+        stockist: { type: mongoose.Schema.Types.ObjectId, ref: "Stockist" },
+        token: { type: String },
+        used: { type: Boolean, default: false },
+      },
+    ],
+    status: {
+      type: String,
+      enum: ["pending", "approved", "cancelled"],
+      default: "pending",
+    },
+    approvedAt: Date,
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model(
+  "PurchaseCardRequest",
+  PurchaseCardRequestSchema
+);

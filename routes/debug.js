@@ -41,6 +41,24 @@ router.get("/info", (req, res) => {
   }
 });
 
+// Simple runtime information endpoint
+router.get("/runtime", (req, res) => {
+  try {
+    const allowed = global.__ALLOWED_ORIGINS__ || [];
+    res.json({
+      success: true,
+      apiBase: process.env.FRONTEND_BASE_URL || null,
+      allowedOrigins: allowed,
+      env: {
+        NODE_ENV: process.env.NODE_ENV || null,
+        VITE_API_URL: process.env.VITE_API_URL || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "runtime error" });
+  }
+});
+
 // Protected endpoint to run an SMTP check from the running process.
 // Accepts POST { to: "recipient@example.com" } and requires header
 // `x-debug-token` to equal process.env.DEBUG_TOKEN. This avoids exposing
@@ -90,12 +108,10 @@ router.post("/fetch-image", async (req, res) => {
   try {
     const token = req.headers["x-debug-token"] || "";
     if (!process.env.DEBUG_TOKEN) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Image fetch disabled (no DEBUG_TOKEN set).",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Image fetch disabled (no DEBUG_TOKEN set).",
+      });
     }
     if (!token || token !== process.env.DEBUG_TOKEN) {
       return res
@@ -187,13 +203,11 @@ router.post("/fetch-image", async (req, res) => {
     return res.json({ success: true, url, head: headResult, get: getResult });
   } catch (err) {
     console.error("/debug/fetch-image error:", err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "fetch-image failed",
-        error: err && err.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "fetch-image failed",
+      error: err && err.message,
+    });
   }
 });
 

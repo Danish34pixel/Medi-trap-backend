@@ -80,6 +80,7 @@ const medicineRoutes = tryRequireRoute("medicine");
 const companyRoutes = tryRequireRoute("company");
 const staffRoutes = tryRequireRoute("staff");
 const migrationRoutes = tryRequireRoute("migration");
+const purchasingCardRoutes = tryRequireRoute("purchasingCard");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -97,7 +98,7 @@ const corsOptions = {
   origin: [
     "https://medi-trap-frontend.vercel.app",
     "http://localhost:5173",
-    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app"
+    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app",
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -217,6 +218,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Prevent caching for API responses (development & production safe):
+// This avoids conditional GET/ETag 304 responses returning stale cached
+// resource bodies in the browser after a login/token swap.
+app.use((req, res, next) => {
+  try {
+    if (req.path && req.path.startsWith("/api/")) {
+      res.setHeader(
+        "Cache-Control",
+        "no-store, no-cache, must-revalidate, proxy-revalidate"
+      );
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+  } catch (e) {
+    // ignore header errors
+  }
+  next();
+});
+
 // Serve uploaded files (images) so frontend can load them by URL
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -226,10 +246,31 @@ app.use((req, res, next) => {
   next();
 });
 
+// Dev-only: log Authorization header snippet for API requests to help debug
+app.use((req, res, next) => {
+  try {
+    if (req.path && req.path.startsWith("/api/")) {
+      const auth = req.headers.authorization || "(none)";
+      const snippet =
+        typeof auth === "string" && auth.startsWith("Bearer ")
+          ? auth.slice(7, 19) + "..."
+          : auth;
+      console.debug(
+        `ReqAuth: ${req.method} ${req.path} -> Authorization=${snippet}`
+      );
+    }
+  } catch (e) {
+    // ignore logging errors
+  }
+  next();
+});
+
 // Routes
 app.use("/api/auth", authRoutes);
 // Mount purchaser routes
 app.use("/api/purchaser", purchaserRoutes);
+// Mount purchasing card request/grant endpoints
+app.use("/api/purchasing-card", purchasingCardRoutes);
 // Mount placeholder routes for frontend
 app.use("/api/stockist", stockistRoutes);
 app.use("/api/medicine", medicineRoutes);
