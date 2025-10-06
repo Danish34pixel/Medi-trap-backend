@@ -80,6 +80,7 @@ const medicineRoutes = tryRequireRoute("medicine");
 const companyRoutes = tryRequireRoute("company");
 const staffRoutes = tryRequireRoute("staff");
 const migrationRoutes = tryRequireRoute("migration");
+const purchasingCardRoutes = tryRequireRoute("purchasingCard");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -97,7 +98,7 @@ const corsOptions = {
   origin: [
     "https://medi-trap-frontend.vercel.app",
     "http://localhost:5173",
-    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app"
+    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app",
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -238,6 +239,8 @@ app.use("/api/company", companyRoutes);
 app.use("/api/staff", staffRoutes);
 // Mount migration routes (dry-run backfill)
 app.use("/api/migration", migrationRoutes);
+// Mount purchasing-card endpoints
+app.use("/api/purchasing-card", purchasingCardRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

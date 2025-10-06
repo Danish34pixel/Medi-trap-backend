@@ -112,6 +112,46 @@ async function createTransporter() {
 
 // sendMail signature: sendMail({ to, subject, html, text, from })
 async function sendMail({ to, subject, html, text, from }) {
+  // Prefer SendGrid API when API key is provided
+  const sendgridKey = process.env.SENDGRID_API_KEY || process.env.SENDGRID_KEY;
+  if (sendgridKey) {
+    try {
+      // Lazy-require so code doesn't crash if dependency missing in some installs
+      const sgMail = require("@sendgrid/mail");
+      sgMail.setApiKey(sendgridKey);
+      const effectiveFrom =
+        from ||
+        process.env.EMAIL_FROM ||
+        process.env.EMAIL_USER ||
+        "no-reply@example.com";
+      const msg = {
+        to,
+        from: effectiveFrom,
+        subject,
+        text,
+        html,
+      };
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          "sendMail: using SendGrid API to send from=",
+          effectiveFrom,
+          "to=",
+          to
+        );
+      }
+      const result = await sgMail.send(msg);
+      // sgMail.send returns an array of response objects for single msg
+      return { info: result, previewUrl: null };
+    } catch (sgErr) {
+      console.error(
+        "sendMail: SendGrid API send failed",
+        sgErr && sgErr.message
+      );
+      // Fall through to nodemailer fallback below
+    }
+  }
+
+  // Fallback to nodemailer transports (existing behavior)
   try {
     const primary = await createTransporter();
     const { transporter, preview: isPreview } = primary;
