@@ -200,12 +200,10 @@ exports.registerStockist = async (req, res) => {
           .json({ success: false, message: "Email already in use by a user." });
       }
       if (stockistExists) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Email already in use by another stockist.",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Email already in use by another stockist.",
+        });
       }
     }
 
@@ -216,20 +214,16 @@ exports.registerStockist = async (req, res) => {
         Stockist.findOne({ phone }).lean(),
       ]);
       if (userExistsByPhone) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Phone number already in use by a user.",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Phone number already in use by a user.",
+        });
       }
       if (stockistExistsByPhone) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Phone number already in use by another stockist.",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Phone number already in use by another stockist.",
+        });
       }
     }
 
@@ -334,6 +328,38 @@ exports.verifyStockistPassword = async (req, res) => {
     return res.status(200).json({ success: true, data: safe });
   } catch (err) {
     console.error("verifyStockistPassword error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Get a single stockist by id (safe fields)
+exports.getStockistById = async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!id)
+      return res
+        .status(400)
+        .json({ success: false, message: "Stockist id required" });
+    const stockist = await Stockist.findById(id).lean();
+    if (!stockist)
+      return res
+        .status(404)
+        .json({ success: false, message: "Stockist not found" });
+    const safe = {
+      _id: stockist._id,
+      name: stockist.name,
+      companyName: stockist.companyName || stockist.name,
+      title: stockist.title || stockist.name,
+      profileImageUrl: stockist.profileImageUrl || null,
+      licenseImageUrl: stockist.licenseImageUrl || null,
+      address: stockist.address || {},
+      phone: stockist.phone || null,
+      email: stockist.email || null,
+      roleType: stockist.roleType || null,
+    };
+    return res.status(200).json({ success: true, data: safe });
+  } catch (err) {
+    console.error("getStockistById error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
