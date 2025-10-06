@@ -2,6 +2,7 @@ const PurchasingRequest = require("../models/PurchasingRequest");
 const Purchaser = require("../models/Purchaser");
 const Stockist = require("../models/Stockist");
 const { sendMail } = require("../utils/mailer");
+const { emailQueue } = require("../queues/emailQueue");
 
 // Create a purchasing-card request and notify selected stockists
 exports.createRequest = async (req, res) => {
@@ -20,26 +21,41 @@ exports.createRequest = async (req, res) => {
     });
     await purchReq.save();
 
-    // Notify stockists by email when possible
+    // Notify stockists by enqueuing email jobs (fast path)
     const stockists = await Stockist.find({ _id: { $in: stockistIds } });
+    const backendBase =
+      process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
+
+    // Resolve frontend base from environment. Prefer explicit FRONTEND_BASE_URL,
+    // then FRONTEND_URL. In development, fall back to localhost. In production,
+    // if no frontend URL is configured, fall back to backendBase so redirects
+    // remain valid within the deployment.
+    let frontendBase =
+      process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || null;
+    if (!frontendBase) {
+      frontendBase =
+        process.env.NODE_ENV === "development"
+          ? `http://localhost:5173`
+          : backendBase;
+    }
+
     for (const s of stockists) {
+      if (!s.email) continue;
       try {
-        if (s.email) {
-          // Build an approval link which will call the backend approve-via-link endpoint
-          const backendBase =
-            process.env.BACKEND_URL ||
-            `http://localhost:${process.env.PORT || 5000}`;
-          const approveLink = `${backendBase}/api/purchasing-card/approve-link/${purchReq._id}/${s._id}`;
+        const approveLink = `${backendBase}/api/purchasing-card/approve-link/${purchReq._id}/${s._id}`;
 
-          const htmlBody = `<p>A purchaser <strong>${
-            requester?.fullName || requester?.email || "Unknown"
-          }</strong> has requested purchasing card access.</p>
-            <p>Request ID: <code>${purchReq._id}</code></p>
-            <p>Please click the button below to approve the request:</p>
-            <p style="margin-top:18px"><a href="${approveLink}" style="background:#0ea5e9;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Approve Request</a></p>
-            <p>If the request receives 3 approvals it will be activated and you will be redirected to the purchaser details page.</p>`;
+        const htmlBody = `<p>A purchaser <strong>${
+          requester?.fullName || requester?.email || "Unknown"
+        }</strong> has requested purchasing card access.</p>
+          <p>Request ID: <code>${purchReq._id}</code></p>
+          <p>Please click the button below to approve the request:</p>
+          <p style="margin-top:18px"><a href="${approveLink}" style="background:#0ea5e9;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Approve Request</a></p>
+          <p>If the request receives 3 approvals it will be activated and you will be redirected to the purchaser details page.</p>`;
 
-          await sendMail({
+        // enqueue a job for the email worker to process
+        await emailQueue.add(
+          "sendApprovalEmail",
+          {
             to: s.email,
             subject: "Purchasing card approval requested",
             text: `A purchaser (${
@@ -48,10 +64,20 @@ exports.createRequest = async (req, res) => {
               purchReq._id
             }. Visit: ${approveLink}`,
             html: htmlBody,
-          });
-        }
+          },
+          {
+            attempts: 5,
+            backoff: { type: "exponential", delay: 2000 },
+            removeOnComplete: true,
+            removeOnFail: false,
+          }
+        );
       } catch (e) {
-        console.warn("Failed to send mail to stockist", s._id, e.message);
+        console.warn(
+          "Failed to enqueue mail job for stockist",
+          s._id,
+          e.message
+        );
       }
     }
 
@@ -77,15 +103,13 @@ exports.approveViaLink = async (req, res) => {
     if (!reqDoc) return res.status(404).send("Request not found");
     if (reqDoc.status !== "pending") {
       // Already processed
-      const frontend = process.env.FRONTEND_URL || `http://localhost:5173`;
-      return res.redirect(frontend);
+      return res.redirect(frontendBase);
     }
 
     if (
       reqDoc.approvals.some((a) => String(a.stockistId) === String(stockistId))
     ) {
-      const frontend = process.env.FRONTEND_URL || `http://localhost:5173`;
-      return res.redirect(frontend);
+      return res.redirect(frontendBase);
     }
 
     reqDoc.approvals.push({ stockistId, approvedAt: new Date() });
@@ -113,14 +137,13 @@ exports.approveViaLink = async (req, res) => {
 
     await reqDoc.save();
 
-    const frontend = process.env.FRONTEND_URL || `http://localhost:5173`;
     if (createdPurchaser && createdPurchaser._id) {
-      return res.redirect(`${frontend}/purchaser/${createdPurchaser._id}`);
+      return res.redirect(`${frontendBase}/purchaser/${createdPurchaser._id}`);
     }
 
     // Not yet fully approved - redirect to a pending notification page or the frontend root
     return res.redirect(
-      `${frontend}/?purchasing_request=${reqDoc._id}&status=pending`
+      `${frontendBase}/?purchasing_request=${reqDoc._id}&status=pending`
     );
   } catch (err) {
     console.error("approveViaLink error", err);

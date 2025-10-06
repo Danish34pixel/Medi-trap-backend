@@ -32,7 +32,41 @@ if (!loaded) {
     "No config.env or .env file found in Backend or current working directory. Environment variables may be missing."
   );
 }
+
+// Production sanity checks: fail early if critical environment variables are missing.
+// This helps avoid accidental deployments with incomplete configuration.
+if (process.env.NODE_ENV === "production") {
+  const hasMongo =
+    process.env.MONGO_URI || process.env.MONGODB_URI || process.env.DB_URI;
+  const hasJwt = Boolean(
+    process.env.JWT_SECRET && String(process.env.JWT_SECRET).trim()
+  );
+  const hasFrontend = Boolean(
+    process.env.FRONTEND_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      process.env.FRONTEND_URLS
+  );
+
+  const missing = [];
+  if (!hasMongo) missing.push("MONGO_URI (or MONGODB_URI / DB_URI)");
+  if (!hasJwt) missing.push("JWT_SECRET");
+  if (!hasFrontend)
+    missing.push("FRONTEND_BASE_URL or FRONTEND_URL (recommended)");
+
+  if (missing.length > 0) {
+    console.error(
+      "Production configuration incomplete. Missing required environment variables:",
+      missing.join(", ")
+    );
+    console.error(
+      "Please set the missing variables in the environment and restart the process."
+    );
+    // Exit with non-zero so orchestrators (systemd, docker, k8s) notice the misconfiguration.
+    process.exit(1);
+  }
+}
 const express = require("express");
+const helmet = require("helmet");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
@@ -88,6 +122,8 @@ const { handleUploadError } = require("./middleware/upload");
 const app = express();
 
 // Middleware
+// Security headers
+app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -96,9 +132,10 @@ const corsOptions = {
   // Allow the production frontend by default (Vercel URL). The FRONTEND_URL
   // environment variable can override this for other deployments.
   origin: [
-    "https://medi-trap-frontend.vercel.app",
+    process.env.FRONTEND_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      "https://medi-trap-frontend.vercel.app",
     "http://localhost:5173",
-    process.env.FRONTEND_URL || "https://medi-trap-frontend.vercel.app",
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -115,17 +152,23 @@ const corsOptions = {
 // frontend origin as a sensible default so deployed frontends can access the
 // API even when the Render environment wasn't updated. Any values in
 // FRONTEND_URLS or FRONTEND_URL will be merged with this default.
-const DEFAULT_FRONTEND = "https://medi-trap-frontend.vercel.app";
+const DEFAULT_FRONTEND =
+  process.env.FRONTEND_BASE_URL ||
+  process.env.FRONTEND_URL ||
+  "https://medi-trap-frontend.vercel.app";
 // Include common local dev origins so Vite (localhost:5173) can talk to the API during development.
 const DEV_FRONTENDS = ["http://localhost:5173", "http://10.0.2.2:5000"];
 const rawFrontends =
-  process.env.FRONTEND_URLS || process.env.FRONTEND_URL || DEFAULT_FRONTEND;
+  process.env.FRONTEND_URLS ||
+  process.env.FRONTEND_URL ||
+  process.env.FRONTEND_BASE_URL ||
+  DEFAULT_FRONTEND;
 const allowedOrigins = new Set(
   // Start from the default, include common dev origins, and merge any environment-provided origins.
   [DEFAULT_FRONTEND]
     .concat(DEV_FRONTENDS)
     .concat(
-      rawFrontends
+      String(rawFrontends)
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
