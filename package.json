@@ -9,7 +9,6 @@
     "worker": "node workers/emailWorker.js"
   },
   "devDependencies": {
-    "nodemailer": "^7.0.6",
     "nodemon": "^3.0.1"
   },
   "keywords": [
@@ -21,7 +20,7 @@
   "author": "MedTrap Team",
   "license": "MIT",
   "dependencies": {
-    "@sendgrid/mail": "latest",
+    "nodemailer": "^7.0.6",
     "bcryptjs": "^3.0.2",
     "bullmq": "^1.74.0",
     "cloudinary": "^2.7.0",

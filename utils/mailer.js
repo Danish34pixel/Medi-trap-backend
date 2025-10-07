@@ -13,6 +13,9 @@ async function createTransporter() {
   const emailPort = process.env.EMAIL_PORT || process.env.SMTP_PORT;
   const emailSecure = process.env.EMAIL_SECURE || process.env.SMTP_SECURE;
   const sendgridKey = process.env.SENDGRID_API_KEY || process.env.SENDGRID_KEY;
+  // Control explicit SendGrid use via env var. By default prefer SMTP creds and nodemailer.
+  const useSendGrid =
+    String(process.env.USE_SENDGRID || "false").toLowerCase() === "true";
 
   const useEthereal = parseBool(process.env.USE_ETHEREAL) || !emailUser;
   const isProduction = process.env.NODE_ENV === "production";
@@ -40,13 +43,15 @@ async function createTransporter() {
     return { transporter, preview: true };
   }
 
-  // If SendGrid API key is present, prefer using SendGrid SMTP (user: 'apikey')
-  if (sendgridKey) {
+  // If SendGrid API key is present AND USE_SENDGRID=true, prefer using SendGrid SMTP (user: 'apikey')
+  if (sendgridKey && useSendGrid) {
     const sgHost = "smtp.sendgrid.net";
     const sgPort = 587;
     const sgSecure = false;
     if (process.env.NODE_ENV === "development") {
-      console.log("Mailer: using SendGrid SMTP (smtp.sendgrid.net)");
+      console.log(
+        "Mailer: using SendGrid SMTP (smtp.sendgrid.net) because USE_SENDGRID=true"
+      );
     }
     const transporter = nodemailer.createTransport({
       host: sgHost,
@@ -67,6 +72,12 @@ async function createTransporter() {
       throw verifyErr;
     }
     return { transporter, preview: false };
+  }
+
+  if (sendgridKey && !useSendGrid && process.env.NODE_ENV === "development") {
+    console.log(
+      "SendGrid API key is present but USE_SENDGRID is not set to 'true'; falling back to nodemailer SMTP transport."
+    );
   }
 
   const host = emailHost || "smtp.gmail.com";
