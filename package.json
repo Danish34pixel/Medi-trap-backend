@@ -31,9 +31,12 @@
     "express-rate-limit": "^8.1.0",
     "helmet": "^7.0.0",
     "ioredis": "^5.8.1",
+    "jimp": "^1.6.0",
     "jsonwebtoken": "^9.0.2",
+    "jsqr": "^1.4.0",
     "mongodb": "^6.19.0",
     "mongoose": "^8.18.1",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "tesseract.js": "^6.0.1"
   }
 }

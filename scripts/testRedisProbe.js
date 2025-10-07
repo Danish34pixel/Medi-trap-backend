@@ -38,13 +38,13 @@ async function tryConnect(name, ctorArgs, opts = {}) {
     : undefined;
   const username = process.env.REDIS_USERNAME;
   const password = process.env.REDIS_PASSWORD || undefined;
+  const url = process.env.REDIS_URL; // may be rediss://...
   if (!url && (!host || !port || !username)) {
     console.error(
       "Redis probe requires REDIS_URL or REDIS_HOST/REDIS_PORT/REDIS_USERNAME to be set in environment."
     );
     process.exit(2);
   }
-  const url = process.env.REDIS_URL; // may be rediss://...
 
   if (url) {
     await tryConnect("URL (as-is)", url, {

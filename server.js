@@ -115,6 +115,7 @@ const companyRoutes = tryRequireRoute("company");
 const staffRoutes = tryRequireRoute("staff");
 const migrationRoutes = tryRequireRoute("migration");
 const purchasingCardRoutes = tryRequireRoute("purchasingCard");
+const verifyRoutes = tryRequireRoute("verify");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -270,6 +271,26 @@ app.use((req, res, next) => {
   next();
 });
 
+// RPS metrics middleware (counts requests per second)
+try {
+  const { rpsMiddleware, rpsMonitor } = require("./middleware/rps");
+  app.use(rpsMiddleware);
+
+  // Expose a simple metrics endpoint to fetch RPS
+  app.get("/metrics/rps", (req, res) => {
+    res.json({
+      success: true,
+      lastSecond: rpsMonitor.getLastSecond(),
+      history: rpsMonitor.getHistory(),
+      averagePerSecond: rpsMonitor.getAverage(),
+      windowSeconds: rpsMonitor.windowSize,
+      timestamp: Date.now(),
+    });
+  });
+} catch (e) {
+  console.warn("RPS middleware not available:", e && e.message);
+}
+
 // Routes
 app.use("/api/auth", authRoutes);
 // Mount purchaser routes
@@ -284,6 +305,8 @@ app.use("/api/staff", staffRoutes);
 app.use("/api/migration", migrationRoutes);
 // Mount purchasing-card endpoints
 app.use("/api/purchasing-card", purchasingCardRoutes);
+// Document verification endpoints (OCR, checks)
+app.use("/api/verify", verifyRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
