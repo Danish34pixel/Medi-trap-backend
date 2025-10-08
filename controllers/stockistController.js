@@ -356,7 +356,7 @@ exports.getStockistById = async (req, res) => {
       phone: stockist.phone || null,
       email: stockist.email || null,
       roleType: stockist.roleType || null,
-      // expose approval status for client-side verification polling
+      declined: !!stockist.declined, // Include declined flag
       approved: !!stockist.approved,
       approvedAt: stockist.approvedAt || null,
     };
@@ -405,6 +405,34 @@ exports.approveStockist = async (req, res) => {
     });
   } catch (err) {
     console.error("approveStockist error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Admin-only: decline a stockist (delete from database)
+exports.declineStockist = async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!id)
+      return res
+        .status(400)
+        .json({ success: false, message: "Stockist id required" });
+
+    const stockist = await Stockist.findById(id);
+    if (!stockist)
+      return res
+        .status(404)
+        .json({ success: false, message: "Stockist not found" });
+
+    // Delete stockist from database
+    await Stockist.findByIdAndDelete(id);
+
+    return res.json({
+      success: true,
+      message: "Stockist deleted",
+    });
+  } catch (err) {
+    console.error("declineStockist error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };

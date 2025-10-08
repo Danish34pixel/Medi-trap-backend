@@ -55,4 +55,12 @@ router.patch(
   stockistController.approveStockist
 );
 
+// PATCH /api/stockist/:id/decline - admin-only: mark a stockist as declined
+router.patch(
+  "/:id/decline",
+  authenticate,
+  isAdmin,
+  stockistController.declineStockist
+);
+
 module.exports = router;
