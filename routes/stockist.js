@@ -47,4 +47,12 @@ router.post(
 // POST /api/stockist/verify-password - verify password and return safe stockist data
 router.post("/verify-password", stockistController.verifyStockistPassword);
 
+// PATCH /api/stockist/:id/approve - admin-only: mark a stockist as approved
+router.patch(
+  "/:id/approve",
+  authenticate,
+  isAdmin,
+  stockistController.approveStockist
+);
+
 module.exports = router;

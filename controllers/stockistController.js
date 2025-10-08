@@ -356,10 +356,55 @@ exports.getStockistById = async (req, res) => {
       phone: stockist.phone || null,
       email: stockist.email || null,
       roleType: stockist.roleType || null,
+      // expose approval status for client-side verification polling
+      approved: !!stockist.approved,
+      approvedAt: stockist.approvedAt || null,
     };
     return res.status(200).json({ success: true, data: safe });
   } catch (err) {
     console.error("getStockistById error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Admin-only: approve a stockist (set approved flag and record who approved)
+exports.approveStockist = async (req, res) => {
+  try {
+    const { id } = req.params || {};
+    if (!id)
+      return res
+        .status(400)
+        .json({ success: false, message: "Stockist id required" });
+
+    const stockist = await Stockist.findById(id);
+    if (!stockist)
+      return res
+        .status(404)
+        .json({ success: false, message: "Stockist not found" });
+
+    // idempotent: if already approved, return success
+    if (stockist.approved) {
+      return res.json({
+        success: true,
+        message: "Already approved",
+        data: stockist,
+      });
+    }
+
+    stockist.approved = true;
+    stockist.approvedAt = new Date();
+    // record admin id if available on req.user (authenticate middleware attaches it)
+    if (req.user && req.user.id) stockist.approvedBy = req.user.id;
+
+    await stockist.save();
+
+    return res.json({
+      success: true,
+      message: "Stockist approved",
+      data: stockist,
+    });
+  } catch (err) {
+    console.error("approveStockist error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
