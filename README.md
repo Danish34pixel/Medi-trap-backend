@@ -33,8 +33,7 @@ A robust backend API for the MedTrap medical store application with MongoDB inte
 
 3. **Environment Configuration**
 
-   - Copy `config.env.example` to `config.env`
-   - Update the following variables:
+   - Create a `config.env` or `.env` file at the project root and set the required variables. Update the following variables:
      ```env
      MONGO_URI=your_mongodb_connection_string
      JWT_SECRET=your_jwt_secret_key
@@ -363,3 +362,9 @@ This project is licensed under the MIT License.
 ## 📞 Support
 
 For support and questions, please contact the development team or create an issue in the repository.
+
+## ⚠️ Security note
+
+- Do NOT commit your `Backend/.env` to version control. It contains secrets (DB credentials, API keys, SMTP passwords).
+- If you find any secrets committed to the repository history, rotate those credentials (Cloudinary API key/secret, Redis password, JWT secret) immediately.
+  -- Ensure `.env` (or `config.env`) is documented and added to `.gitignore` so secrets are not committed.

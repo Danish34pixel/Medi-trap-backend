@@ -18,7 +18,7 @@ exports.createStaff = async (req, res) => {
         .json({ success: false, message: "Authentication required." });
     }
 
-    // Only stockists (and admins) can create staff.
+    // Only stockists may create staff. Do not allow admins to create staff.
     // Accept cases where the authenticated object is a Stockist document even if
     // the `role` field is missing (some stockist records are stored raw).
     const isStockist =
@@ -26,11 +26,10 @@ exports.createStaff = async (req, res) => {
       (reqUser &&
         reqUser.constructor &&
         reqUser.constructor.modelName === "Stockist");
-    const isAdminUser = reqUser && reqUser.role === "admin";
-    if (!isStockist && !isAdminUser) {
+    if (!isStockist) {
       return res.status(403).json({
         success: false,
-        message: "Only stockists or admins can create staff.",
+        message: "Only stockists can create staff.",
       });
     }
 
@@ -56,13 +55,8 @@ exports.createStaff = async (req, res) => {
       console.warn("Failed to delete temp files:", e);
     }
 
-    // Determine owning stockist for this staff record.
-    // - If the requester is an admin and provided `stockist` in the body, use that.
-    // - Otherwise, use the authenticated user's id (stockist owner).
-    let owningStockistId = reqUser._id;
-    if (reqUser.role === "admin" && req.body && req.body.stockist) {
-      owningStockistId = req.body.stockist;
-    }
+    // The owning stockist is always the authenticated stockist.
+    const owningStockistId = reqUser._id;
 
     const staff = new Staff({
       fullName,

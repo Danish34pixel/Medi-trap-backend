@@ -24,6 +24,10 @@ const StockistSchema = new mongoose.Schema(
     profileImageUrl: { type: String },
     roleType: String, // 'Proprietor' or 'Pharmacist'
     cntxNumber: String,
+    // Approval metadata (set by admin)
+    approved: { type: Boolean, default: false },
+    approvedAt: Date,
+    approvedBy: { type: String },
   },
   { strict: false, timestamps: true }
 );

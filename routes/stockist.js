@@ -15,6 +15,9 @@ const {
 // GET /api/stockist - list stockists
 router.get("/", stockistController.getStockists);
 
+// GET /api/stockist/:id - get single stockist by id
+router.get("/:id", stockistController.getStockistById);
+
 // POST /api/stockist - create a new stockist (any authenticated user)
 router.post("/", authenticate, stockistController.createStockist);
 
@@ -43,5 +46,13 @@ router.post(
 
 // POST /api/stockist/verify-password - verify password and return safe stockist data
 router.post("/verify-password", stockistController.verifyStockistPassword);
+
+// PATCH /api/stockist/:id/approve - admin-only: mark a stockist as approved
+router.patch(
+  "/:id/approve",
+  authenticate,
+  isAdmin,
+  stockistController.approveStockist
+);
 
 module.exports = router;

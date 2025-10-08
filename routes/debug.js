@@ -7,11 +7,29 @@ const prodMailer = require(path.join(
   "utils",
   "prodMailerHelper"
 ));
+const { authenticate } = require("../middleware/auth");
 
 function redact(val) {
   if (!val) return null;
   return String(val).length > 6 ? String(val).slice(0, 3) + "***" : "***";
 }
+
+// Dev-only: return basic info about the authenticated user/token
+router.get("/me", authenticate, (req, res) => {
+  try {
+    const user = req.user || null;
+    const safe = user
+      ? {
+          id: user._id || user.id || null,
+          role: user.role || null,
+          email: user.email || user.contactNo || null,
+        }
+      : null;
+    res.json({ success: true, data: safe });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 
 router.get("/info", (req, res) => {
   try {
@@ -85,7 +103,6 @@ router.post("/email-check", async (req, res) => {
         .status(400)
         .json({ success: false, message: "Missing 'to' in body" });
 
-    // Use helper to create transporter and send a lightweight test message.
     const result = await prodMailer.sendTestMail({
       to,
       subject: "Prod SMTP check",
@@ -133,7 +150,6 @@ router.post("/fetch-image", async (req, res) => {
         .json({ success: false, message: "Only Cloudinary URLs are allowed" });
     }
 
-    // Use global fetch (Node 18+) where available; otherwise fall back to https request
     const doFetch = async (method, extraHeaders = {}) => {
       if (typeof fetch === "function") {
         const resp = await fetch(url, { method, headers: extraHeaders });
@@ -148,7 +164,6 @@ router.post("/fetch-image", async (req, res) => {
           bodyLength: body ? body.byteLength : null,
         };
       }
-      // Fallback: use https.get and only read a small chunk for GET
       const https = require("https");
       return new Promise((resolve, reject) => {
         const parsed = new URL(url);
@@ -164,7 +179,6 @@ router.post("/fetch-image", async (req, res) => {
           if (method === "GET") {
             r.on("data", (chunk) => {
               length += chunk.length;
-              // stop after reading ~16KB
               if (length > 16 * 1024) req.destroy();
             });
           }
@@ -183,16 +197,13 @@ router.post("/fetch-image", async (req, res) => {
       });
     };
 
-    // HEAD
     let headResult = null;
     try {
       headResult = await doFetch("HEAD");
     } catch (headErr) {
-      // capture the error and continue to attempt a ranged GET
       headResult = { error: headErr && headErr.message };
     }
 
-    // Small ranged GET to detect partial/content-range issues
     let getResult = null;
     try {
       getResult = await doFetch("GET", { Range: "bytes=0-16383" });

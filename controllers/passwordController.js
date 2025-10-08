@@ -81,12 +81,11 @@ async function forgotPassword(req, res) {
     );
 
     // Prefer an explicit FRONTEND_BASE_URL, then FRONTEND_URL (single URL),
-    // then fall back to the known Vercel frontend. This avoids generating
-    // localhost links in deployed environments when only FRONTEND_URL is set.
+    // then fall back to either a localhost dev URL or the known Vercel frontend.
     const rawFrontendBase =
       process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || null;
-    // Default Vercel frontend URL
-    const defaultFrontend = "https://medi-trap-frontend.vercel.app";
+    const defaultFrontend =
+      process.env.NODE_ENV === "development" ? "http://localhost:5173" : null;
     // Helper to check dev/localhost-like values
     function looksLocalhost(u) {
       if (!u) return false;
@@ -101,6 +100,13 @@ async function forgotPassword(req, res) {
     let normalizedBase = rawFrontendBase
       ? String(rawFrontendBase).replace(/\/+$/, "")
       : defaultFrontend;
+    // If still null in production, fall back to backend origin when available
+    if (!normalizedBase && req && req.headers && req.headers.host) {
+      const proto = req.protocol || req.headers["x-forwarded-proto"] || "http";
+      normalizedBase = `${proto}://${req.headers.host}`;
+    }
+    // Last-resort fallback to a safe literal only if nothing else is available
+    if (!normalizedBase) normalizedBase = "http://localhost:5173";
 
     // If the configured base looks like a local/dev URL, try to use the incoming Origin
     // header (only if it's in the runtime allowlist exposed as global.__ALLOWED_ORIGINS__)
@@ -213,11 +219,11 @@ async function forgotPassword(req, res) {
 // body: { token, email, newPassword }
 async function resetPassword(req, res) {
   try {
-  // Accept token/email from either body (POST) or query (GET)
-  const token = req.body.token || req.query.token;
-  const email = req.body.email || req.query.email;
-  const newPassword = req.body.newPassword;
-  console.log("[resetPassword] Called with:", { token, email });
+    // Accept token/email from either body (POST) or query (GET)
+    const token = req.body.token || req.query.token;
+    const email = req.body.email || req.query.email;
+    const newPassword = req.body.newPassword;
+    console.log("[resetPassword] Called with:", { token, email });
     console.log("[resetPassword] Called with:", { token, email });
     if (!token || !email || !newPassword) {
       console.log("[resetPassword] Missing required fields");
@@ -255,7 +261,8 @@ async function resetPassword(req, res) {
     console.log("[resetPassword] Stored token:", stored);
     const bufA = Buffer.from(hashed);
     const bufB = Buffer.from(stored);
-    const timingSafe = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+    const timingSafe =
+      bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
     console.log("[resetPassword] Token match:", timingSafe);
     if (!timingSafe) {
       console.log("[resetPassword] Invalid token or email");
