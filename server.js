@@ -273,6 +273,12 @@ const allowedOrigins = new Set(
     .map((s) => s.replace(/\/+$/, ""))
 );
 
+// Ensure common frontend origin is always present (helps deployments where env vars
+// were not set correctly). This is safe because it's the known production frontend.
+try {
+  allowedOrigins.add("https://medi-trap-frontend.vercel.app");
+} catch (e) {}
+
 // Expose the current allowlist to runtime (debugging). Do not leak secrets.
 global.__ALLOWED_ORIGINS__ = Array.from(allowedOrigins);
 
