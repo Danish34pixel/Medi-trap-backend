@@ -236,11 +236,26 @@ router.post(
         });
       }
 
-      // Upload image to Cloudinary
-      const cloudinaryResult = await uploadToCloudinary(
-        req.file,
-        "medtek/licenses"
-      );
+      // Upload image to Cloudinary (best-effort). If upload fails, fall back
+      // to the local uploaded file path so signup can continue instead of
+      // returning a 500 due to an upstream service error.
+      let cloudinaryResult = null;
+      try {
+        cloudinaryResult = await uploadToCloudinary(
+          req.file,
+          "medtek/licenses"
+        );
+      } catch (uploadErr) {
+        console.warn(
+          "Cloudinary upload failed during signup, falling back to local file:",
+          uploadErr && uploadErr.message
+        );
+        // Provide a file:// URL pointing to the uploaded local file so the
+        // rest of the flow can store a usable path. This is safe for
+        // deployments where Cloudinary is unavailable; production should
+        // configure Cloudinary and/or use persistent storage.
+        cloudinaryResult = { url: `file://${req.file.path}`, public_id: null };
+      }
 
       // Hash password
       const salt = await bcrypt.genSalt(12);
@@ -287,17 +302,49 @@ router.post(
         );
       } catch (e) {}
 
-      // Helpful hint: Cloudinary may be unconfigured in this environment
-      if (!require("../config/cloudinary").CLOUDINARY_CONFIGURED) {
-        console.warn(
-          "Cloudinary not configured - files will be stored locally and URL will be a file:// path. Configure CLOUDINARY_* env vars in production."
-        );
+      // Map common errors to clearer HTTP responses
+      // Mongoose validation errors
+      if (error && error.name === "ValidationError") {
+        const messages = Object.values(error.errors).map((e) => e.message);
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Validation error",
+            errors: messages,
+          });
       }
 
-      res.status(500).json({
+      // Duplicate key error
+      if (error && error.name === "MongoError" && error.code === 11000) {
+        const key = Object.keys(error.keyValue || {}).join(", ") || "field";
+        return res
+          .status(409)
+          .json({ success: false, message: `Duplicate value for ${key}` });
+      }
+
+      // Cloudinary upload failed (wraps original message)
+      if (
+        error &&
+        /Cloudinary upload failed/i.test(String(error.message || ""))
+      ) {
+        return res
+          .status(502)
+          .json({
+            success: false,
+            message: "Image upload failed",
+            error: error.message,
+          });
+      }
+
+      // Fallback: include stack in development for easier debugging
+      const isDev = process.env.NODE_ENV === "development";
+      const payload = {
         success: false,
         message: "Server error during registration",
-      });
+      };
+      if (isDev && error && error.stack) payload.stack = error.stack;
+      return res.status(500).json(payload);
     }
   },
   cleanupUploads
@@ -343,20 +390,16 @@ router.post("/login", async (req, res) => {
       // Enforce manual approval workflow: only approved stockists can login
       if (!stockist.status || stockist.status !== "approved") {
         if (stockist.status === "declined") {
-          return res
-            .status(403)
-            .json({
-              success: false,
-              message: "Your registration was declined by admin.",
-            });
-        }
-        return res
-          .status(403)
-          .json({
+          return res.status(403).json({
             success: false,
-            message:
-              "Your account is under review. Please wait for admin approval.",
+            message: "Your registration was declined by admin.",
           });
+        }
+        return res.status(403).json({
+          success: false,
+          message:
+            "Your account is under review. Please wait for admin approval.",
+        });
       }
 
       // Create a lightweight user-like object for the stockist
@@ -524,11 +567,23 @@ router.put(
 
       // Handle image upload if provided
       if (req.file) {
-        const cloudinaryResult = await uploadToCloudinary(
-          req.file,
-          "medtek/licenses"
-        );
-        updateData.drugLicenseImage = cloudinaryResult.url;
+        let cloudinaryResultProfile = null;
+        try {
+          cloudinaryResultProfile = await uploadToCloudinary(
+            req.file,
+            "medtek/licenses"
+          );
+        } catch (uploadErr) {
+          console.warn(
+            "Cloudinary upload failed during profile update, falling back to local file:",
+            uploadErr && uploadErr.message
+          );
+          cloudinaryResultProfile = {
+            url: `file://${req.file.path}`,
+            public_id: null,
+          };
+        }
+        updateData.drugLicenseImage = cloudinaryResultProfile.url;
       }
 
       // Update user
