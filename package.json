@@ -21,7 +21,6 @@
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^3.0.2",
-    "bullmq": "^1.74.0",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
@@ -29,7 +28,6 @@
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.1.0",
     "helmet": "^7.2.0",
-    "ioredis": "^5.8.1",
     "jimp": "^1.6.0",
     "jsonwebtoken": "^9.0.2",
     "jsqr": "^1.4.0",
@@ -37,7 +35,6 @@
     "mongoose": "^8.18.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.6",
-    "redis": "^5.8.3",
     "tesseract.js": "^6.0.1",
     "xss-clean": "^0.1.4"
   }

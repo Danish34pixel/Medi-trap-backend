@@ -1,26 +1,24 @@
-const redisClient = require("../config/redisClient");
+// Simple in-memory cache with TTL support. This removes the Redis
+// dependency and provides the same async API used across the project.
+const store = new Map();
 
-// In-memory fallback cache with TTL support
-const fallbackStore = new Map();
-
-function setFallback(key, value, ttlSeconds) {
+function setItem(key, value, ttlSeconds) {
   const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : null;
-  fallbackStore.set(key, { value, expiresAt });
+  store.set(key, { value, expiresAt });
   if (ttlSeconds) {
     setTimeout(() => {
-      const item = fallbackStore.get(key);
+      const item = store.get(key);
       if (!item) return;
-      if (item.expiresAt && Date.now() >= item.expiresAt)
-        fallbackStore.delete(key);
+      if (item.expiresAt && Date.now() >= item.expiresAt) store.delete(key);
     }, Math.min(1000 * 60 * 60, ttlSeconds * 1000));
   }
 }
 
-function getFallback(key) {
-  const item = fallbackStore.get(key);
+function getItem(key) {
+  const item = store.get(key);
   if (!item) return null;
   if (item.expiresAt && Date.now() >= item.expiresAt) {
-    fallbackStore.delete(key);
+    store.delete(key);
     return null;
   }
   return item.value;
@@ -29,15 +27,8 @@ function getFallback(key) {
 module.exports = {
   async getJson(key) {
     try {
-      if (redisClient) {
-        const val = await redisClient.get(key);
-        return val ? JSON.parse(val) : null;
-      }
-    } catch (e) {
-      console.warn("cache.getJson error (redis):", e && e.message);
-    }
-    try {
-      return getFallback(key);
+      const val = getItem(key);
+      return val === undefined ? null : val;
     } catch (e) {
       return null;
     }
@@ -45,20 +36,7 @@ module.exports = {
 
   async setJson(key, obj, ttlSeconds) {
     try {
-      const str = JSON.stringify(obj);
-      if (redisClient) {
-        if (ttlSeconds && Number(ttlSeconds) > 0) {
-          await redisClient.set(key, str, "EX", Number(ttlSeconds));
-        } else {
-          await redisClient.set(key, str);
-        }
-        return true;
-      }
-    } catch (e) {
-      console.warn("cache.setJson error (redis):", e && e.message);
-    }
-    try {
-      setFallback(key, obj, ttlSeconds);
+      setItem(key, obj, ttlSeconds);
       return true;
     } catch (e) {
       return false;
@@ -67,15 +45,7 @@ module.exports = {
 
   async del(key) {
     try {
-      if (redisClient) {
-        await redisClient.del(key);
-        return true;
-      }
-    } catch (e) {
-      console.warn("cache.del error (redis):", e && e.message);
-    }
-    try {
-      fallbackStore.delete(key);
+      store.delete(key);
       return true;
     } catch (e) {
       return false;

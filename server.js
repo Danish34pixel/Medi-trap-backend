@@ -10,8 +10,7 @@ const path = require("path");
 const mongoSanitize = require("express-mongo-sanitize");
 const xss = require("xss-clean");
 
-// Initialize Redis client (config/redisClient will try to connect). Keep require for side-effects.
-const redisClient = require("./config/redisClient");
+// Redis removed: in-memory fallback is used for cache and queues in this deployment.
 
 const envCandidates = [
   path.join(__dirname, "config.env"),
@@ -112,7 +111,7 @@ const tryRequireRoute = (basePath) => {
   return stub;
 };
 
-// redis client is created/connected in ./config/redisClient.js
+// Redis removed; cache and queue fallbacks are in-memory for this deployment.
 
 // NOTE: sanitization middleware must be installed after the Express app is created
 // and body parsers (express.json / express.urlencoded) are mounted so they can
@@ -475,8 +474,8 @@ app.use((error, req, res, next) => {
     });
   }
 
-  if (error.name === "MongoError" && error.code === 11000) {
-    return res.status(400).json({
+  if (error && error.code === 11000) {
+    return res.status(409).json({
       success: false,
       message: "Duplicate field value. This value already exists.",
     });

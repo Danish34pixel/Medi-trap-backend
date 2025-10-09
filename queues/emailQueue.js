@@ -1,28 +1,34 @@
-const { Queue } = require("bullmq");
-const IORedis = require("ioredis");
+// Minimal in-process email queue fallback to avoid Redis/BullMQ dependency.
+// The queue API exposes `add(name, data, opts)` and processes jobs
+// immediately by calling a user-supplied handler (set via `setProcessor`).
 
-// Redis connection - configurable via env
-let connection;
-if (process.env.REDIS_URL) {
-  connection = new IORedis(process.env.REDIS_URL);
-} else {
-  const host = process.env.REDIS_HOST || "127.0.0.1";
-  const port = process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379;
-  const username = process.env.REDIS_USERNAME || undefined;
-  const password = process.env.REDIS_PASSWORD || undefined;
-  const useTls =
-    String(process.env.REDIS_TLS || "false").toLowerCase() === "true";
+let processor = null;
 
-  const opts = {
-    host,
-    port,
-    username,
-    password,
-  };
-  if (useTls) opts.tls = {};
-  connection = new IORedis(opts);
-}
+const emailQueue = {
+  async add(name, data, opts = {}) {
+    // Immediately process jobs for the in-process fallback. Call the
+    // registered processor if available.
+    try {
+      if (processor) {
+        // Simulate a BullMQ job object minimally
+        const job = { id: Date.now().toString(), name, data, opts };
+        const result = await processor(job);
+        return { id: job.id, returnvalue: result };
+      }
+      // No processor registered; just return a resolved job-like object
+      return { id: Date.now().toString(), returnvalue: null };
+    } catch (err) {
+      // rethrow to preserve semantics
+      throw err;
+    }
+  },
+  // Allows worker code to register a processing function
+  setProcessor(fn) {
+    processor = fn;
+  },
+};
 
-const emailQueue = new Queue("emailQueue", { connection });
+// No external Redis connection in fallback mode
+const connection = null;
 
 module.exports = { emailQueue, connection };

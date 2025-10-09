@@ -288,6 +288,17 @@ router.post(
       // Enhanced logging to aid debugging of 500 during signup
       console.error("Signup error:", error && error.message);
       if (error && error.stack) console.error(error.stack);
+      // Log Mongo duplicate-key info when present to aid debugging on deployed instances
+      try {
+        if (error && typeof error.code !== "undefined") {
+          console.error("Signup error code:", error.code);
+        }
+        if (error && error.keyValue) {
+          console.error("Signup duplicate keyValue:", error.keyValue);
+        }
+      } catch (e) {
+        // ignore
+      }
       try {
         console.error("Request body:", { ...(req.body || {}) });
         console.error(
@@ -306,17 +317,17 @@ router.post(
       // Mongoose validation errors
       if (error && error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((e) => e.message);
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Validation error",
-            errors: messages,
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Validation error",
+          errors: messages,
+        });
       }
 
-      // Duplicate key error
-      if (error && error.name === "MongoError" && error.code === 11000) {
+      // Duplicate key error (MongoDB may set different error.name values
+      // across driver versions; check the numeric code instead so we map
+      // 11000 to a client-friendly 4xx response instead of a 500.)
+      if (error && error.code === 11000) {
         const key = Object.keys(error.keyValue || {}).join(", ") || "field";
         return res
           .status(409)
@@ -328,13 +339,11 @@ router.post(
         error &&
         /Cloudinary upload failed/i.test(String(error.message || ""))
       ) {
-        return res
-          .status(502)
-          .json({
-            success: false,
-            message: "Image upload failed",
-            error: error.message,
-          });
+        return res.status(502).json({
+          success: false,
+          message: "Image upload failed",
+          error: error.message,
+        });
       }
 
       // Fallback: include stack in development for easier debugging
@@ -834,6 +843,14 @@ router.post(
       if (err && err.stack) {
         console.error("Error stack:", err.stack);
       }
+      try {
+        if (err && typeof err.code !== "undefined") {
+          console.error("Purchaser signup error code:", err.code);
+        }
+        if (err && err.keyValue) {
+          console.error("Purchaser duplicate keyValue:", err.keyValue);
+        }
+      } catch (e) {}
 
       // Mongoose validation errors -> return 400 with details
       if (err.name === "ValidationError") {
@@ -845,10 +862,12 @@ router.post(
         });
       }
 
-      // Duplicate key (unique index) errors -> 400
-      if (err.name === "MongoError" && err.code === 11000) {
+      // Duplicate key (unique index) errors -> 400/409. Check numeric code to
+      // be resilient to different MongoDB driver error naming across
+      // environments.
+      if (err && err.code === 11000) {
         const key = Object.keys(err.keyValue || {}).join(", ") || "field";
-        return res.status(400).json({
+        return res.status(409).json({
           success: false,
           message: `Duplicate value for ${key}`,
         });
