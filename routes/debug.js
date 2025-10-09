@@ -77,6 +77,56 @@ router.get("/runtime", (req, res) => {
   }
 });
 
+// Lightweight status endpoint to help diagnose deployment problems.
+// Intentionally returns only non-secret flags (presence booleans and short redacted values).
+router.get("/status", async (req, res) => {
+  try {
+    const os = require("os");
+    const fs = require("fs");
+
+    const allowed = global.__ALLOWED_ORIGINS__ || [];
+    const cloud = require(path.join(__dirname, "..", "config", "cloudinary"));
+
+    // Basic disk check for uploads directory
+    let uploadsFree = null;
+    try {
+      const uploadsPath = path.join(__dirname, "..", "uploads");
+      if (fs.existsSync(uploadsPath)) {
+        const stats = fs.statSync(uploadsPath);
+        uploadsFree = { exists: true, sizeBytes: stats.size };
+      } else {
+        uploadsFree = { exists: false };
+      }
+    } catch (e) {
+      uploadsFree = { error: e && e.message };
+    }
+
+    res.json({
+      success: true,
+      env: {
+        NODE_ENV: process.env.NODE_ENV || null,
+        MONGO_URI_PRESENT: !!(
+          process.env.MONGO_URI ||
+          process.env.MONGODB_URI ||
+          process.env.DB_URI
+        ),
+        JWT_SECRET_PRESENT: !!process.env.JWT_SECRET,
+        CLOUDINARY_CONFIGURED: !!cloud.CLOUDINARY_CONFIGURED,
+        FRONTEND_URL: process.env.FRONTEND_URL || null,
+      },
+      allowedOrigins: allowed,
+      uploads: uploadsFree,
+      memory: {
+        free: os.freemem(),
+        total: os.totalmem(),
+      },
+      timestamp: Date.now(),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "status error" });
+  }
+});
+
 // Protected endpoint to run an SMTP check from the running process.
 // Accepts POST { to: "recipient@example.com" } and requires header
 // `x-debug-token` to equal process.env.DEBUG_TOKEN. This avoids exposing
