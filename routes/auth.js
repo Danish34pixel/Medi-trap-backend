@@ -9,6 +9,8 @@ const {
   handleUploadError,
   cleanupUploads,
 } = require("../middleware/upload");
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
 // Note: a local `authenticate` implementation (with blacklist support)
 // is defined later in this file. Do not import the middleware's
 // `authenticate` here to avoid duplicate declaration/conflict.
@@ -16,6 +18,7 @@ const {
   forgotPassword,
   resetPassword,
 } = require("../controllers/passwordController");
+const cache = require('../utils/cache');
 const router = express.Router();
 
 // Rate limiting for auth routes
@@ -41,6 +44,19 @@ if (!isDevelopment) {
 // Token blacklist for invalidation
 const tokenBlacklist = new Set();
 
+// Helper to compute TTL (seconds) from a JWT token's exp claim
+function ttlFromToken(token) {
+  try {
+    const decoded = jwt.decode(token);
+    if (decoded && decoded.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      const ttl = decoded.exp - now;
+      return ttl > 0 ? ttl : 0;
+    }
+  } catch (e) {}
+  return 0;
+}
+
 // Authenticate middleware (blacklist-aware) - moved up so routes can use it
 const authenticate = async (req, res, next) => {
   try {
@@ -60,12 +76,18 @@ const authenticate = async (req, res, next) => {
       console.debug("Auth: tokenSnippet ->", token.slice(0, 12) + "...");
     } catch (e) {}
 
-    // Check if token is blacklisted
-    if (tokenBlacklist.has(token)) {
-      return res.status(401).json({
-        success: false,
-        message: "Token has been invalidated.",
-      });
+    // Check if token is blacklisted (Redis-backed). Fall back to in-memory set.
+    try {
+      const blackKey = `blacklist:token:${token}`;
+      const isBlack = await cache.getJson(blackKey);
+      if (isBlack) {
+        return res.status(401).json({ success: false, message: "Token has been invalidated." });
+      }
+    } catch (e) {
+      // ignore cache errors and check in-memory fallback
+      if (tokenBlacklist.has(token)) {
+        return res.status(401).json({ success: false, message: "Token has been invalidated." });
+      }
     }
 
     // Verify token
@@ -81,14 +103,40 @@ const authenticate = async (req, res, next) => {
 
     let user = null;
     try {
+      // Try cache first for medical owner (User) profiles
       if (decoded && decoded.role && decoded.role === "stockist") {
         user = await Stockist.findById(decoded.userId).select("-password");
       } else {
-        user = await User.findById(decoded.userId).select("-password");
-        if (!user) {
-          user = await Stockist.findById(decoded.userId).select("-password");
+        // For primary app owners (User), prefer cached copy
+        const cacheKey = `owner:user:${decoded.userId}`;
+        try {
+          const cached = await cache.getJson(cacheKey);
+          if (cached) {
+            console.log(`Auth: owner cache hit -> ${cacheKey}`);
+            user = cached;
+          } else {
+            console.log(`Auth: owner cache miss -> ${cacheKey}`);
+          }
+        } catch (e) {
+          console.warn('Auth: owner cache read error:', e && e.message);
+          user = null;
         }
-      }
+
+        if (!user) {
+          user = await User.findById(decoded.userId).select("-password");
+          if (!user) {
+            user = await Stockist.findById(decoded.userId).select("-password");
+          } else {
+            // Store lightweight user profile in cache for future requests
+            try {
+              await cache.setJson(cacheKey, user, 60 * 5);
+              console.log(`Auth: owner cache set -> ${cacheKey}`);
+            } catch (e) {
+              console.warn('Auth: owner cache set error:', e && e.message);
+            }
+          }
+        }
+        }
     } catch (e) {
       user = null;
     }
@@ -130,6 +178,8 @@ const authenticate = async (req, res, next) => {
 router.post(
   "/signup",
   upload.single("drugLicenseImage"),
+  mongoSanitize(),
+  xss(),
   handleUploadError,
   async (req, res) => {
     try {
@@ -419,6 +469,8 @@ router.put(
   "/profile",
   authenticate,
   upload.single("drugLicenseImage"),
+  mongoSanitize(),
+  xss(),
   handleUploadError,
   async (req, res) => {
     try {
@@ -448,6 +500,14 @@ router.put(
         { new: true, runValidators: true }
       ).select("-password");
 
+      // Update cache for owner profile
+      try {
+        const cacheKey = `owner:user:${req.user._id}`;
+        await cache.setJson(cacheKey, updatedUser, 60 * 5);
+      } catch (e) {
+        // ignore cache set errors
+      }
+
       res.json({
         success: true,
         message: "Profile updated successfully",
@@ -472,7 +532,20 @@ router.post("/logout", authenticate, async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
-      tokenBlacklist.add(token); // Add token to blacklist
+      // Add token to in-memory fallback
+      tokenBlacklist.add(token);
+      // Add token to Redis blacklist with TTL derived from token exp
+      try {
+        const ttl = ttlFromToken(token) || 60 * 60 * 24 * 7; // fallback 7 days
+        if (ttl > 0) {
+          await cache.setJson(`blacklist:token:${token}`, true, ttl);
+        } else {
+          // If no exp found, set a reasonable TTL
+          await cache.setJson(`blacklist:token:${token}`, true, 60 * 60 * 24 * 7);
+        }
+      } catch (e) {
+        console.warn('Failed to persist token blacklist to Redis:', e && e.message);
+      }
     }
 
     res.json({
@@ -549,6 +622,8 @@ router.post(
     { name: "aadharImage", maxCount: 1 },
     { name: "personalPhoto", maxCount: 1 },
   ]),
+  mongoSanitize(),
+  xss(),
   handleUploadError,
   async (req, res) => {
     try {

@@ -3,11 +3,21 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { uploadToCloudinary } = require("../config/cloudinary");
+const cache = require("../utils/cache");
 
 // Get list of stockists
 exports.getStockists = async (req, res) => {
   try {
+    const cacheKey = 'stockists:all';
+    const cached = await cache.getJson(cacheKey);
+    if (cached) {
+      console.log(`getStockists: cache hit -> ${cacheKey}`);
+      return res.json({ success: true, data: cached, cached: true });
+    }
+
     const data = await Stockist.find().sort({ createdAt: -1 });
+    await cache.setJson(cacheKey, data);
+    console.log(`getStockists: cache set -> ${cacheKey}`);
     res.json({ success: true, data });
   } catch (err) {
     console.error("getStockists error:", err);
@@ -166,6 +176,9 @@ exports.createStockist = async (req, res) => {
     const stockist = new Stockist(payload);
     await stockist.save();
 
+    // invalidate stockist list
+    try { await cache.del('stockists:all'); } catch (e) {}
+
     res.status(201).json({ success: true, data: stockist });
   } catch (err) {
     console.error("createStockist error:", err);
@@ -273,6 +286,9 @@ exports.registerStockist = async (req, res) => {
 
     const stockist = new Stockist(payload);
     await stockist.save();
+
+    // invalidate stockist list
+    try { await cache.del('stockists:all'); } catch (e) {}
 
     // Generate a JWT for the newly registered stockist (optional)
     const token = jwt.sign(

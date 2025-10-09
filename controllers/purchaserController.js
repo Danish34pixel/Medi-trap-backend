@@ -39,6 +39,8 @@ exports.createPurchaser = async (req, res) => {
       createdBy: creatorId || undefined,
     });
     await purchaser.save();
+    // Invalidate purchaser lists for this user and global list
+    // No cache invalidation here (purchaser caching removed) - keep DB-only flow
     res.status(201).json({ success: true, data: purchaser });
     // Delete local temp files if present
     try {
@@ -76,6 +78,7 @@ exports.getPurchasers = async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
+    // Use a cache key scoped by requester id or 'all' for admin
     const purchasers = await Purchaser.find(query).sort({ createdAt: -1 });
     res.json({ success: true, data: purchasers });
   } catch (err) {
@@ -118,6 +121,7 @@ exports.deletePurchaser = async (req, res) => {
         String(purchaser.createdBy) === String(requester._id))
     ) {
       await Purchaser.findByIdAndDelete(id);
+      // purchaser cache removed - no invalidation needed
       return res.json({ success: true, message: "Purchaser deleted." });
     }
 

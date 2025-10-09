@@ -7,6 +7,12 @@ const isDevelopment = process.env.NODE_ENV === "development";
 const fs = require("fs");
 const path = require("path");
 
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+
+// Initialize Redis client (config/redisClient will try to connect). Keep require for side-effects.
+const redisClient = require("./config/redisClient");
+
 const envCandidates = [
   path.join(__dirname, "config.env"),
   path.join(__dirname, ".env"),
@@ -106,6 +112,22 @@ const tryRequireRoute = (basePath) => {
   return stub;
 };
 
+
+// redis client is created/connected in ./config/redisClient.js
+
+
+
+// NOTE: sanitization middleware must be installed after the Express app is created
+// and body parsers (express.json / express.urlencoded) are mounted so they can
+// inspect req.body / req.query. The actual app.use(...) calls are added further
+// down, immediately after the body parsers are configured.
+
+
+
+
+
+
+
 // Import route modules using the resilient helper
 const authRoutes = tryRequireRoute("auth");
 const purchaserRoutes = tryRequireRoute("Purchaser");
@@ -127,6 +149,81 @@ const app = express();
 app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Install sanitization middleware after body parsers so req.body is available.
+try {
+  // Instead of calling third-party middlewares which may attempt to assign
+  // to `req.query` (causing "getter-only" errors in some environments),
+  // run a safe, in-place sanitizer for the common cases we need:
+  //  - remove any object keys that start with '$' or contain '.' (Mongo operator injection)
+  //  - escape angle brackets in string values to mitigate simple XSS
+  // This approach mutates existing objects and never assigns to `req.query` as a whole.
+
+  const removeMongoOperators = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    for (const key of Object.keys(obj)) {
+      if (key.startsWith('$') || key.includes('.')) {
+        delete obj[key];
+        continue;
+      }
+      const val = obj[key];
+      if (val && typeof val === 'object') {
+        removeMongoOperators(val);
+      }
+    }
+  };
+
+  const escapeStringValues = (obj) => {
+    if (!obj || typeof obj !== 'object') return;
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (typeof val === 'string') {
+        // minimal escaping to avoid injecting HTML into responses
+        obj[key] = val.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      } else if (val && typeof val === 'object') {
+        escapeStringValues(val);
+      }
+    }
+  };
+
+  app.use((req, res, next) => {
+    try {
+      const hasObjectBody = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body);
+      const hasQuery = req.query && typeof req.query === 'object';
+      const hasParams = req.params && typeof req.params === 'object';
+
+      if (!hasObjectBody && !hasQuery && !hasParams) {
+        if (process.env.NODE_ENV === 'development') {
+          console.debug(`Sanitizer skipped for ${req.method} ${req.path}: no object body/query/params`);
+        }
+        return next();
+      }
+
+      // Sanitize in-place (no reassignment to req.query/req.params)
+      if (hasObjectBody) {
+        removeMongoOperators(req.body);
+        escapeStringValues(req.body);
+      }
+      if (hasQuery) {
+        removeMongoOperators(req.query);
+        escapeStringValues(req.query);
+      }
+      if (hasParams) {
+        removeMongoOperators(req.params);
+        escapeStringValues(req.params);
+      }
+
+      return next();
+    } catch (e) {
+      console.warn('Sanitization runtime error, skipping sanitizers:', e && e.message);
+      return next();
+    }
+  });
+
+  console.log('Sanitization: guarded in-place cleaners enabled');
+} catch (e) {
+  console.warn('Sanitization middleware failed to initialize:', e && e.message);
+}
 
 // CORS configuration
 const corsOptions = {

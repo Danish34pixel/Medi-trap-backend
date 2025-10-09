@@ -3,6 +3,8 @@ const router = express.Router();
 const { upload: uploadAadhar } = require("../middleware/upload");
 const purchaserController = require("../controllers/purchaserController");
 const { authenticate } = require("../middleware/auth");
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
 
 // POST /api/purchaser - create purchaser with aadhar image
 // Accept both aadharImage and photo
@@ -13,6 +15,8 @@ router.post(
     { name: "aadharImage", maxCount: 1 },
     { name: "photo", maxCount: 1 },
   ]),
+  mongoSanitize(),
+  xss(),
   purchaserController.createPurchaser
 );
 
