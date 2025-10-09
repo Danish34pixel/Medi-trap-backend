@@ -9,8 +9,8 @@ const {
   handleUploadError,
   cleanupUploads,
 } = require("../middleware/upload");
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
+const mongoSanitize = require("express-mongo-sanitize");
+const xss = require("xss-clean");
 // Note: a local `authenticate` implementation (with blacklist support)
 // is defined later in this file. Do not import the middleware's
 // `authenticate` here to avoid duplicate declaration/conflict.
@@ -18,7 +18,7 @@ const {
   forgotPassword,
   resetPassword,
 } = require("../controllers/passwordController");
-const cache = require('../utils/cache');
+const cache = require("../utils/cache");
 const router = express.Router();
 
 // Rate limiting for auth routes
@@ -81,12 +81,16 @@ const authenticate = async (req, res, next) => {
       const blackKey = `blacklist:token:${token}`;
       const isBlack = await cache.getJson(blackKey);
       if (isBlack) {
-        return res.status(401).json({ success: false, message: "Token has been invalidated." });
+        return res
+          .status(401)
+          .json({ success: false, message: "Token has been invalidated." });
       }
     } catch (e) {
       // ignore cache errors and check in-memory fallback
       if (tokenBlacklist.has(token)) {
-        return res.status(401).json({ success: false, message: "Token has been invalidated." });
+        return res
+          .status(401)
+          .json({ success: false, message: "Token has been invalidated." });
       }
     }
 
@@ -118,7 +122,7 @@ const authenticate = async (req, res, next) => {
             console.log(`Auth: owner cache miss -> ${cacheKey}`);
           }
         } catch (e) {
-          console.warn('Auth: owner cache read error:', e && e.message);
+          console.warn("Auth: owner cache read error:", e && e.message);
           user = null;
         }
 
@@ -132,11 +136,11 @@ const authenticate = async (req, res, next) => {
               await cache.setJson(cacheKey, user, 60 * 5);
               console.log(`Auth: owner cache set -> ${cacheKey}`);
             } catch (e) {
-              console.warn('Auth: owner cache set error:', e && e.message);
+              console.warn("Auth: owner cache set error:", e && e.message);
             }
           }
         }
-        }
+      }
     } catch (e) {
       user = null;
     }
@@ -266,7 +270,30 @@ router.post(
         user: userResponse,
       });
     } catch (error) {
-      console.error("Signup error:", error);
+      // Enhanced logging to aid debugging of 500 during signup
+      console.error("Signup error:", error && error.message);
+      if (error && error.stack) console.error(error.stack);
+      try {
+        console.error("Request body:", { ...(req.body || {}) });
+        console.error(
+          "Uploaded file:",
+          req.file && {
+            fieldname: req.file.fieldname,
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            path: req.file.path,
+          }
+        );
+      } catch (e) {}
+
+      // Helpful hint: Cloudinary may be unconfigured in this environment
+      if (!require("../config/cloudinary").CLOUDINARY_CONFIGURED) {
+        console.warn(
+          "Cloudinary not configured - files will be stored locally and URL will be a file:// path. Configure CLOUDINARY_* env vars in production."
+        );
+      }
+
       res.status(500).json({
         success: false,
         message: "Server error during registration",
@@ -316,9 +343,20 @@ router.post("/login", async (req, res) => {
       // Enforce manual approval workflow: only approved stockists can login
       if (!stockist.status || stockist.status !== "approved") {
         if (stockist.status === "declined") {
-          return res.status(403).json({ success: false, message: "Your registration was declined by admin." });
+          return res
+            .status(403)
+            .json({
+              success: false,
+              message: "Your registration was declined by admin.",
+            });
         }
-        return res.status(403).json({ success: false, message: "Your account is under review. Please wait for admin approval." });
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message:
+              "Your account is under review. Please wait for admin approval.",
+          });
       }
 
       // Create a lightweight user-like object for the stockist
@@ -541,10 +579,17 @@ router.post("/logout", authenticate, async (req, res) => {
           await cache.setJson(`blacklist:token:${token}`, true, ttl);
         } else {
           // If no exp found, set a reasonable TTL
-          await cache.setJson(`blacklist:token:${token}`, true, 60 * 60 * 24 * 7);
+          await cache.setJson(
+            `blacklist:token:${token}`,
+            true,
+            60 * 60 * 24 * 7
+          );
         }
       } catch (e) {
-        console.warn('Failed to persist token blacklist to Redis:', e && e.message);
+        console.warn(
+          "Failed to persist token blacklist to Redis:",
+          e && e.message
+        );
       }
     }
 
@@ -598,13 +643,11 @@ router.patch("/users/:id/approve", async (req, res) => {
     // user.approvedAt = new Date();
     await user.save();
 
-    res
-      .status(200)
-      .json({
-        message: "User approved successfully",
-        data: { approvedAt: new Date() },
-        user,
-      });
+    res.status(200).json({
+      message: "User approved successfully",
+      data: { approvedAt: new Date() },
+      user,
+    });
   } catch (error) {
     console.error("Error approving user:", error);
     res.status(500).json({ message: "Internal server error" });
