@@ -7,8 +7,8 @@ const isDevelopment = process.env.NODE_ENV === "development";
 const fs = require("fs");
 const path = require("path");
 
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
+const mongoSanitize = require("express-mongo-sanitize");
+const xss = require("xss-clean");
 
 // Initialize Redis client (config/redisClient will try to connect). Keep require for side-effects.
 const redisClient = require("./config/redisClient");
@@ -112,21 +112,12 @@ const tryRequireRoute = (basePath) => {
   return stub;
 };
 
-
 // redis client is created/connected in ./config/redisClient.js
-
-
 
 // NOTE: sanitization middleware must be installed after the Express app is created
 // and body parsers (express.json / express.urlencoded) are mounted so they can
 // inspect req.body / req.query. The actual app.use(...) calls are added further
 // down, immediately after the body parsers are configured.
-
-
-
-
-
-
 
 // Import route modules using the resilient helper
 const authRoutes = tryRequireRoute("auth");
@@ -138,6 +129,7 @@ const staffRoutes = tryRequireRoute("staff");
 const migrationRoutes = tryRequireRoute("migration");
 const purchasingCardRoutes = tryRequireRoute("purchasingCard");
 const verifyRoutes = tryRequireRoute("verify");
+const userRoutes = tryRequireRoute("user");
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
@@ -160,27 +152,27 @@ try {
   // This approach mutates existing objects and never assigns to `req.query` as a whole.
 
   const removeMongoOperators = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
+    if (!obj || typeof obj !== "object") return;
     for (const key of Object.keys(obj)) {
-      if (key.startsWith('$') || key.includes('.')) {
+      if (key.startsWith("$") || key.includes(".")) {
         delete obj[key];
         continue;
       }
       const val = obj[key];
-      if (val && typeof val === 'object') {
+      if (val && typeof val === "object") {
         removeMongoOperators(val);
       }
     }
   };
 
   const escapeStringValues = (obj) => {
-    if (!obj || typeof obj !== 'object') return;
+    if (!obj || typeof obj !== "object") return;
     for (const key of Object.keys(obj)) {
       const val = obj[key];
-      if (typeof val === 'string') {
+      if (typeof val === "string") {
         // minimal escaping to avoid injecting HTML into responses
-        obj[key] = val.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      } else if (val && typeof val === 'object') {
+        obj[key] = val.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      } else if (val && typeof val === "object") {
         escapeStringValues(val);
       }
     }
@@ -188,13 +180,16 @@ try {
 
   app.use((req, res, next) => {
     try {
-      const hasObjectBody = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body);
-      const hasQuery = req.query && typeof req.query === 'object';
-      const hasParams = req.params && typeof req.params === 'object';
+      const hasObjectBody =
+        req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body);
+      const hasQuery = req.query && typeof req.query === "object";
+      const hasParams = req.params && typeof req.params === "object";
 
       if (!hasObjectBody && !hasQuery && !hasParams) {
-        if (process.env.NODE_ENV === 'development') {
-          console.debug(`Sanitizer skipped for ${req.method} ${req.path}: no object body/query/params`);
+        if (process.env.NODE_ENV === "development") {
+          console.debug(
+            `Sanitizer skipped for ${req.method} ${req.path}: no object body/query/params`
+          );
         }
         return next();
       }
@@ -215,14 +210,17 @@ try {
 
       return next();
     } catch (e) {
-      console.warn('Sanitization runtime error, skipping sanitizers:', e && e.message);
+      console.warn(
+        "Sanitization runtime error, skipping sanitizers:",
+        e && e.message
+      );
       return next();
     }
   });
 
-  console.log('Sanitization: guarded in-place cleaners enabled');
+  console.log("Sanitization: guarded in-place cleaners enabled");
 } catch (e) {
-  console.warn('Sanitization middleware failed to initialize:', e && e.message);
+  console.warn("Sanitization middleware failed to initialize:", e && e.message);
 }
 
 // CORS configuration
@@ -444,6 +442,8 @@ app.use("/api/migration", migrationRoutes);
 app.use("/api/purchasing-card", purchasingCardRoutes);
 // Document verification endpoints (OCR, checks)
 app.use("/api/verify", verifyRoutes);
+// User routes (admin user management)
+app.use("/api/user", userRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

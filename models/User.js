@@ -76,6 +76,18 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Admin approval flags for user accounts
+    approved: {
+      type: Boolean,
+      default: false,
+    },
+    declined: {
+      type: Boolean,
+      default: false,
+    },
+    approvedAt: {
+      type: Date,
+    },
     // Optional purchaser-specific fields for self-signup flows
     aadharNo: {
       type: String,
