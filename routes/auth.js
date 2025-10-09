@@ -263,6 +263,14 @@ router.post("/login", async (req, res) => {
           .json({ success: false, message: "Invalid credentials" });
       }
 
+      // Enforce manual approval workflow: only approved stockists can login
+      if (!stockist.status || stockist.status !== "approved") {
+        if (stockist.status === "declined") {
+          return res.status(403).json({ success: false, message: "Your registration was declined by admin." });
+        }
+        return res.status(403).json({ success: false, message: "Your account is under review. Please wait for admin approval." });
+      }
+
       // Create a lightweight user-like object for the stockist
       user = {
         _id: stockist._id,

@@ -160,6 +160,9 @@ exports.createStockist = async (req, res) => {
     if (payload.cntxNumber)
       payload.cntxNumber = String(payload.cntxNumber).trim();
 
+    // Ensure status is set to processing for new created stockists
+    if (!payload.status) payload.status = "processing";
+
     const stockist = new Stockist(payload);
     await stockist.save();
 
@@ -264,10 +267,14 @@ exports.registerStockist = async (req, res) => {
     if (payload.cntxNumber)
       payload.cntxNumber = String(payload.cntxNumber).trim();
 
+    // Set status to processing for manual verification flow
+    payload.status = "processing";
+    payload.declined = false;
+
     const stockist = new Stockist(payload);
     await stockist.save();
 
-    // Generate a JWT for the newly registered stockist
+    // Generate a JWT for the newly registered stockist (optional)
     const token = jwt.sign(
       { userId: stockist._id, role: "stockist" },
       process.env.JWT_SECRET,
@@ -358,6 +365,7 @@ exports.getStockistById = async (req, res) => {
       roleType: stockist.roleType || null,
       declined: !!stockist.declined, // Include declined flag
       approved: !!stockist.approved,
+      status: stockist.status || "processing",
       approvedAt: stockist.approvedAt || null,
     };
     return res.status(200).json({ success: true, data: safe });
@@ -383,7 +391,7 @@ exports.approveStockist = async (req, res) => {
         .json({ success: false, message: "Stockist not found" });
 
     // idempotent: if already approved, return success
-    if (stockist.approved) {
+    if (stockist.approved && stockist.status === "approved") {
       return res.json({
         success: true,
         message: "Already approved",
@@ -392,9 +400,11 @@ exports.approveStockist = async (req, res) => {
     }
 
     stockist.approved = true;
+    stockist.declined = false;
+    stockist.status = "approved";
     stockist.approvedAt = new Date();
     // record admin id if available on req.user (authenticate middleware attaches it)
-    if (req.user && req.user.id) stockist.approvedBy = req.user.id;
+    if (req.user && (req.user.id || req.user._id)) stockist.approvedBy = req.user.id || req.user._id;
 
     await stockist.save();
 
@@ -424,12 +434,17 @@ exports.declineStockist = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Stockist not found" });
 
-    // Delete stockist from database
-    await Stockist.findByIdAndDelete(id);
+    // Mark as declined instead of deleting so we can show feedback to the applicant
+    stockist.declined = true;
+    stockist.approved = false;
+    stockist.status = "declined";
+    stockist.declinedAt = new Date();
+    await stockist.save();
 
     return res.json({
       success: true,
-      message: "Stockist deleted",
+      message: "Stockist declined",
+      data: stockist,
     });
   } catch (err) {
     console.error("declineStockist error:", err);
