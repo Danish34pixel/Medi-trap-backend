@@ -111,8 +111,8 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Index for better query performance
-userSchema.index({ email: 1 });
-userSchema.index({ drugLicenseNo: 1 });
+// Note: `unique: true` is declared on `email` and `drugLicenseNo` above which
+// creates the necessary unique indexes. Avoid declaring duplicate indexes
+// with `schema.index()` to prevent Mongoose duplicate-index warnings.
 
 module.exports = mongoose.model("User", userSchema);

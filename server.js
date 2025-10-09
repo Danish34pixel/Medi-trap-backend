@@ -520,10 +520,9 @@ const connectDB = async () => {
       }`
     );
 
-    const conn = await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    // Note: modern MongoDB driver does not require useNewUrlParser/useUnifiedTopology
+    // options anymore; pass the URI directly.
+    const conn = await mongoose.connect(mongoUri);
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
