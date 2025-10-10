@@ -102,6 +102,8 @@ const tryRequireRoute = (basePath) => {
   // with a 501 so the server doesn't crash on startup in deployments where
   // the file is missing or differently named.
   const stub = express.Router();
+  // mark the stub so calling code can detect missing routes
+  stub.isStub = true;
   stub.use((req, res) =>
     res.status(501).json({
       success: false,
@@ -129,6 +131,31 @@ const migrationRoutes = tryRequireRoute("migration");
 const purchasingCardRoutes = tryRequireRoute("purchasingCard");
 const verifyRoutes = tryRequireRoute("verify");
 const userRoutes = tryRequireRoute("user");
+
+// In production, fail fast if any essential route failed to load. This avoids
+// silently serving 501 responses to clients when a required module couldn't
+// be required (for example due to a missing dependency or filename casing
+// issue during deployment).
+if (process.env.NODE_ENV === "production") {
+  try {
+    const essentialMap = {
+      auth: authRoutes,
+      Purchaser: purchaserRoutes,
+      purchasingCard: purchasingCardRoutes,
+    };
+    for (const [name, router] of Object.entries(essentialMap)) {
+      if (router && router.isStub) {
+        console.error(
+          `Essential route module '${name}' failed to load. Exiting to avoid serving 501 stubs.`
+        );
+        process.exit(1);
+      }
+    }
+  } catch (e) {
+    console.error("Error while validating essential routes:", e && e.message);
+    process.exit(1);
+  }
+}
 
 // Import middleware
 const { handleUploadError } = require("./middleware/upload");
