@@ -9,8 +9,7 @@ const {
   handleUploadError,
   cleanupUploads,
 } = require("../middleware/upload");
-const mongoSanitize = require("express-mongo-sanitize");
-const xss = require("xss-clean");
+// sanitizers removed per user request
 // Note: a local `authenticate` implementation (with blacklist support)
 // is defined later in this file. Do not import the middleware's
 // `authenticate` here to avoid duplicate declaration/conflict.

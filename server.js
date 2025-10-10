@@ -7,8 +7,8 @@ const isDevelopment = process.env.NODE_ENV === "development";
 const fs = require("fs");
 const path = require("path");
 
-const mongoSanitize = require("express-mongo-sanitize");
-const xss = require("xss-clean");
+// Sanitization packages removed per user request. Project uses in-place
+// sanitizers where needed.
 
 // Redis removed: in-memory fallback is used for cache and queues in this deployment.
 

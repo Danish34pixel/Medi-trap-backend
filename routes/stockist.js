@@ -11,8 +11,8 @@ const {
   handleUploadError,
   cleanupUploads,
 } = require("../middleware/upload");
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
+// sanitizers removed per user request
+const xss = require("xss-clean");
 
 // GET /api/stockist - list stockists
 router.get("/", stockistController.getStockists);
@@ -31,7 +31,7 @@ router.post(
   "/upload-license",
   authenticate,
   upload.single("licenseImage"),
-  mongoSanitize(),
+
   xss(),
   stockistController.uploadLicenseImage,
   handleUploadError,
