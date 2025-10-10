@@ -310,19 +310,44 @@ try {
 // Expose the current allowlist to runtime (debugging). Do not leak secrets.
 global.__ALLOWED_ORIGINS__ = Array.from(allowedOrigins);
 
-// Dynamic CORS middleware: reflect the incoming Origin when allowed.
-// Allow CORS by echoing the request origin. This pragmatically ensures the
-// browser receives Access-Control-Allow-Origin for the incoming origin and
-// helps avoid preflight failures. If you need stricter rules, replace this
-// with a whitelist-based validator later.
+// CORS configuration: validate incoming Origin with a function so we can
+// explicitly set Access-Control-Allow-Origin to the requesting origin when
+// allowed. This avoids sending a wildcard origin together with
+// Access-Control-Allow-Credentials: true which browsers reject.
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // No origin (curl, server-to-server) -> allow
+      if (!origin) return callback(null, true);
+
+      // Normalize origin (strip trailing slash)
+      const normalized = String(origin).replace(/\/+$/, "");
+
+      if (allowedOrigins.has(normalized)) return callback(null, true);
+
+      if (isDevelopment) {
+        try {
+          const localLanRegex =
+            /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
+          if (localLanRegex.test(normalized)) return callback(null, true);
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Not allowed
+      return callback(new Error("Not allowed by CORS"), false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// Note: do not register app.options('*') with a bare '*' path - older
+// path-to-regexp versions can throw when parsing '*'. The `cors` middleware
+// installed above will handle preflight requests automatically for allowed
+// origins.
 
 // Debug: print allowed origins at startup
 console.log("Allowed CORS origins:", Array.from(allowedOrigins));
@@ -335,36 +360,11 @@ try {
   console.warn("Debug route not mounted:", e && e.message);
 }
 
+// Small debug middleware: log incoming origins (does not modify CORS headers)
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  let allowed = false;
-  if (!origin) {
-    // Allow requests with no Origin header (static files, images)
-    allowed = true;
-  } else if (allowedOrigins.has(origin)) {
-    allowed = true;
-  } else if (isDevelopment) {
-    // Mirror the same local LAN allowlist as the CORS handler above
-    try {
-      const localLanRegex =
-        /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
-      if (localLanRegex.test(origin)) allowed = true;
-    } catch (e) {
-      // ignore
-    }
-  }
-  // Debug: log incoming origin and whether it's allowed
-  console.log(`CORS: incoming Origin=${origin} allowed=${allowed}`);
-  if (allowed) {
-    res.setHeader("Access-Control-Allow-Origin", origin || "*");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-    );
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  }
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  try {
+    console.log(`CORS: incoming Origin=${req.headers.origin || "<none>"}`);
+  } catch (e) {}
   next();
 });
 

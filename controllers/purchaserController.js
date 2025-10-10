@@ -6,7 +6,11 @@ const { uploadToCloudinary } = require("../config/cloudinary");
 
 // Create purchaser with aadhar image and photo (Cloudinary URLs)
 exports.createPurchaser = async (req, res) => {
+  console.log("ENTER createPurchaser", { path: req.path, method: req.method });
   try {
+    try {
+      console.log("Incoming files keys:", Object.keys(req.files || {}));
+    } catch (e) {}
     // If authentication middleware attached a user, prefer it; otherwise allow anonymous creation
     const creatorId = req.user && req.user._id;
     const { fullName, address, contactNo } = req.body;
@@ -21,14 +25,36 @@ exports.createPurchaser = async (req, res) => {
     const aadharFile = req.files["aadharImage"][0];
     const photoFile = req.files["photo"][0];
 
-    const aadharUpload = await uploadToCloudinary(
-      aadharFile,
-      "meditrap/purchasers"
-    );
-    const photoUpload = await uploadToCloudinary(
-      photoFile,
-      "meditrap/purchasers"
-    );
+    let aadharUpload;
+    let photoUpload;
+    try {
+      aadharUpload = await uploadToCloudinary(
+        aadharFile,
+        "meditrap/purchasers"
+      );
+    } catch (uploadErr) {
+      console.warn(
+        "Aadhar upload failed, falling back to local file. Error:",
+        uploadErr && uploadErr.message
+      );
+      aadharUpload = {
+        url: aadharFile && aadharFile.path ? `file://${aadharFile.path}` : null,
+        public_id: null,
+      };
+    }
+
+    try {
+      photoUpload = await uploadToCloudinary(photoFile, "meditrap/purchasers");
+    } catch (uploadErr) {
+      console.warn(
+        "Photo upload failed, falling back to local file. Error:",
+        uploadErr && uploadErr.message
+      );
+      photoUpload = {
+        url: photoFile && photoFile.path ? `file://${photoFile.path}` : null,
+        public_id: null,
+      };
+    }
 
     const purchaser = new Purchaser({
       fullName,
