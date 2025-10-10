@@ -187,7 +187,7 @@ router.post(
   handleUploadError,
   async (req, res) => {
     try {
-      const {
+      let {
         medicalName,
         ownerName,
         address,
@@ -195,7 +195,16 @@ router.post(
         contactNo,
         drugLicenseNo,
         password,
-      } = req.body;
+      } = req.body || {};
+
+      // Normalize common fields early so validation and duplicate checks
+      // behave consistently across environments (frontend may send
+      // capitalized emails or lowercase/uppercase license numbers).
+      email = typeof email === "string" ? email.toLowerCase().trim() : email;
+      drugLicenseNo =
+        typeof drugLicenseNo === "string"
+          ? drugLicenseNo.toUpperCase().trim()
+          : drugLicenseNo;
 
       // Check if required fields are present
       if (
@@ -221,16 +230,21 @@ router.post(
         });
       }
 
-      // Check if user already exists
+      // Check if user already exists - use lean() to get a plain object
+      // (avoids some Mongoose doc edge cases during error handling).
       const existingUser = await User.findOne({
         $or: [{ email }, { drugLicenseNo }],
-      });
+      }).lean();
 
       if (existingUser) {
-        return res.status(400).json({
+        const duplicateField =
+          existingUser.email && existingUser.email === email
+            ? "email"
+            : "drugLicenseNo";
+        return res.status(409).json({
           success: false,
           message:
-            existingUser.email === email
+            duplicateField === "email"
               ? "Email already registered"
               : "Drug license number already registered",
         });
@@ -269,7 +283,10 @@ router.post(
         email: email.toLowerCase(),
         contactNo,
         drugLicenseNo: drugLicenseNo.toUpperCase(),
-        drugLicenseImage: cloudinaryResult.url,
+        drugLicenseImage:
+          cloudinaryResult && cloudinaryResult.url
+            ? cloudinaryResult.url
+            : `file://${req.file && req.file.path}`,
         password: hashedPassword,
       });
 
