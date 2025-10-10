@@ -106,6 +106,16 @@ exports.createPurchaser = async (req, res) => {
         logErr && logErr.message
       );
     }
+    // If DEBUG_API is set, return verbose error details (temporary, opt-in)
+    if (process.env.DEBUG_API === "1") {
+      return res.status(500).json({
+        success: false,
+        message:
+          err && err.message ? String(err.message) : "Internal Server Error",
+        stack: err && err.stack ? String(err.stack) : undefined,
+      });
+    }
+
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
