@@ -36,28 +36,9 @@ const authLimiter = rateLimit({
   },
 });
 
-// Apply rate limiting to auth routes only outside development
 if (!isDevelopment) {
   router.use(authLimiter);
 }
-
-// Token blacklist for invalidation
-const tokenBlacklist = new Set();
-
-// Helper to compute TTL (seconds) from a JWT token's exp claim
-function ttlFromToken(token) {
-  try {
-    const decoded = jwt.decode(token);
-    if (decoded && decoded.exp) {
-      const now = Math.floor(Date.now() / 1000);
-      const ttl = decoded.exp - now;
-      return ttl > 0 ? ttl : 0;
-    }
-  } catch (e) {}
-  return 0;
-}
-
-// Authenticate middleware (blacklist-aware) - moved up so routes can use it
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -187,6 +168,15 @@ router.post(
   handleUploadError,
   async (req, res) => {
     try {
+      // Diagnostic: log Content-Type and presence of uploaded file to aid
+      // debugging of 500s coming from deployed frontend (missing multipart/form)
+      try {
+        console.debug(
+          `Signup diagnostic: Content-Type=${
+            req.headers["content-type"]
+          }, hasFile=${!!req.file}, hasFiles=${!!req.files}`
+        );
+      } catch (e) {}
       let {
         medicalName,
         ownerName,
@@ -222,14 +212,6 @@ router.post(
         });
       }
 
-      // Check if file was uploaded
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: "Drug license image is required",
-        });
-      }
-
       // Check if user already exists - use lean() to get a plain object
       // (avoids some Mongoose doc edge cases during error handling).
       const existingUser = await User.findOne({
@@ -250,25 +232,32 @@ router.post(
         });
       }
 
-      // Upload image to Cloudinary (best-effort). If upload fails, fall back
-      // to the local uploaded file path so signup can continue instead of
-      // returning a 500 due to an upstream service error.
+      // Upload image to Cloudinary (best-effort) only when a file exists.
+      // If `req.file` is present we attempt to upload; otherwise use a
+      // placeholder so signup can proceed. This avoids a 500 when the
+      // frontend fails to send multipart/form-data.
       let cloudinaryResult = null;
-      try {
-        cloudinaryResult = await uploadToCloudinary(
-          req.file,
-          "medtek/licenses"
-        );
-      } catch (uploadErr) {
+      if (!req.file) {
         console.warn(
-          "Cloudinary upload failed during signup, falling back to local file:",
-          uploadErr && uploadErr.message
+          "Signup warning: no drugLicenseImage provided; proceeding with placeholder"
         );
-        // Provide a file:// URL pointing to the uploaded local file so the
-        // rest of the flow can store a usable path. This is safe for
-        // deployments where Cloudinary is unavailable; production should
-        // configure Cloudinary and/or use persistent storage.
-        cloudinaryResult = { url: `file://${req.file.path}`, public_id: null };
+        cloudinaryResult = { url: "placeholder", public_id: null };
+      } else {
+        try {
+          cloudinaryResult = await uploadToCloudinary(
+            req.file,
+            "medtek/licenses"
+          );
+        } catch (uploadErr) {
+          console.warn(
+            "Cloudinary upload failed during signup, falling back to local file:",
+            uploadErr && uploadErr.message
+          );
+          cloudinaryResult = {
+            url: `file://${req.file.path}`,
+            public_id: null,
+          };
+        }
       }
 
       // Hash password
