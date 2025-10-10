@@ -162,8 +162,6 @@ const authenticate = async (req, res, next) => {
 router.post(
   "/signup",
   upload.single("drugLicenseImage"),
-  mongoSanitize(),
-  xss(),
   handleUploadError,
   async (req, res) => {
     try {
@@ -564,8 +562,6 @@ router.put(
   "/profile",
   authenticate,
   upload.single("drugLicenseImage"),
-  mongoSanitize(),
-  xss(),
   handleUploadError,
   async (req, res) => {
     try {
@@ -734,8 +730,6 @@ router.post(
     { name: "aadharImage", maxCount: 1 },
     { name: "personalPhoto", maxCount: 1 },
   ]),
-  mongoSanitize(),
-  xss(),
   handleUploadError,
   async (req, res) => {
     try {
