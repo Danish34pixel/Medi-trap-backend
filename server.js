@@ -193,16 +193,18 @@ try {
         return next();
       }
 
-      // Sanitize in-place (no reassignment to req.query/req.params)
+      // Sanitize in-place (never assign to req.query/req.params, only mutate)
       if (hasObjectBody) {
         removeMongoOperators(req.body);
         escapeStringValues(req.body);
       }
       if (hasQuery) {
+        // Only mutate properties, never assign req.query = ...
         removeMongoOperators(req.query);
         escapeStringValues(req.query);
       }
       if (hasParams) {
+        // Only mutate properties, never assign req.params = ...
         removeMongoOperators(req.params);
         escapeStringValues(req.params);
       }
