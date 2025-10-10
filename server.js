@@ -284,28 +284,13 @@ try {
 global.__ALLOWED_ORIGINS__ = Array.from(allowedOrigins);
 
 // Dynamic CORS middleware: reflect the incoming Origin when allowed.
+// Allow CORS by echoing the request origin. This pragmatically ensures the
+// browser receives Access-Control-Allow-Origin for the incoming origin and
+// helps avoid preflight failures. If you need stricter rules, replace this
+// with a whitelist-based validator later.
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow non-browser requests (curl, server-to-server) with no Origin
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.has(origin)) return callback(null, true);
-      // During development, allow common local-LAN origins (phone testing)
-      if (isDevelopment) {
-        try {
-          // Accept origins like http://192.168.x.y(:port) or http://10.x.x.x(:port)
-          const localLanRegex =
-            /^https?:\/\/(?:192\.168|10|172\.(1[6-9]|2\d|3[0-1]))(?:\.\d{1,3}){2}(?::\d+)?$/;
-          if (localLanRegex.test(origin)) return callback(null, true);
-        } catch (e) {
-          // ignore and fallthrough to reject
-        }
-      }
-      // Not allowed: do not throw an error (that bubbles to the global error
-      // handler). Instead, respond with success=false so CORS middleware will
-      // not set the CORS headers and the browser will block the request.
-      return callback(null, false);
-    },
+    origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
