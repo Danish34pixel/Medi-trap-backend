@@ -12,7 +12,6 @@ const {
   cleanupUploads,
 } = require("../middleware/upload");
 // sanitizers removed per user request
-const xss = require("xss-clean");
 
 // GET /api/stockist - list stockists
 router.get("/", stockistController.getStockists);
@@ -31,8 +30,6 @@ router.post(
   "/upload-license",
   authenticate,
   upload.single("licenseImage"),
-
-  xss(),
   stockistController.uploadLicenseImage,
   handleUploadError,
   cleanupUploads
@@ -43,8 +40,6 @@ router.post(
   "/upload-profile",
   authenticate,
   upload.single("profileImage"),
-  mongoSanitize(),
-  xss(),
   stockistController.uploadProfileImage,
   handleUploadError,
   cleanupUploads
