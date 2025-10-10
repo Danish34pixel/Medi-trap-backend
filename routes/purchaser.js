@@ -8,14 +8,13 @@ const xss = require("xss-clean");
 
 // POST /api/purchaser - create purchaser with aadhar image
 // Accept both aadharImage and photo
+// Allow anonymous creation: purchaser creation is a public action (uploads handled server-side)
 router.post(
   "/",
-  authenticate,
   uploadAadhar.fields([
     { name: "aadharImage", maxCount: 1 },
     { name: "photo", maxCount: 1 },
   ]),
-
   xss(),
   purchaserController.createPurchaser
 );

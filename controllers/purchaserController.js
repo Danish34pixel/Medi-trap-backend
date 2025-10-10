@@ -58,8 +58,29 @@ exports.createPurchaser = async (req, res) => {
     }
   } catch (err) {
     // Log full error on server for debugging
-    console.error("PurchaserController error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error(
+      "PurchaserController error:",
+      err && err.stack ? err.stack : err
+    );
+    try {
+      console.error("Request body keys:", Object.keys(req.body || {}));
+      console.error(
+        "Request files:",
+        Object.keys(req.files || {}).reduce((acc, k) => {
+          acc[k] = (req.files[k] || []).map((f) => ({
+            originalname: f.originalname,
+            size: f.size,
+          }));
+          return acc;
+        }, {})
+      );
+    } catch (logErr) {
+      console.warn(
+        "Failed to log request debug info:",
+        logErr && logErr.message
+      );
+    }
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
 
@@ -125,12 +146,10 @@ exports.deletePurchaser = async (req, res) => {
       return res.json({ success: true, message: "Purchaser deleted." });
     }
 
-    return res
-      .status(403)
-      .json({
-        success: false,
-        message: "Not authorized to delete this purchaser.",
-      });
+    return res.status(403).json({
+      success: false,
+      message: "Not authorized to delete this purchaser.",
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
