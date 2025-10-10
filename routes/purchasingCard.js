@@ -5,6 +5,10 @@ const Stockist = require("../models/Stockist");
 const PurchaseCardRequest = require("../models/PurchaseCardRequest");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { sendMail } = require("../utils/mailer");
+const jwt = require("jsonwebtoken");
+
+// In-memory SSE clients registry: stockistId -> array of response objects
+const sseClients = new Map();
 
 // POST /api/purchasing-card/request
 // Body: { stockistIds: [id1, id2, id3] }
@@ -23,7 +27,13 @@ router.post("/request", authenticate, async (req, res) => {
     });
     console.debug("Request body:", req.body);
 
-    const { stockistIds } = req.body || {};
+    const {
+      stockistIds,
+      purchaserId,
+      requester: requesterBody,
+      purchaserData,
+    } = req.body || {};
+    // If purchaserId is provided, we store a display reference so stockists see the correct name
     if (!Array.isArray(stockistIds) || stockistIds.length < 3) {
       return res.status(400).json({
         success: false,
@@ -51,8 +61,28 @@ router.post("/request", authenticate, async (req, res) => {
       requester: requester._id,
       stockists: stockistIds,
       approvalTokens,
+      requesterDisplay: purchaserId
+        ? {
+            name: requesterBody?.fullName || undefined,
+            email: requesterBody?.email || undefined,
+            purchaserId,
+            photo: purchaserData?.photo || undefined,
+          }
+        : requesterBody
+        ? { name: requesterBody.fullName, email: requesterBody.email }
+        : undefined,
     });
     await reqDoc.save();
+
+    // Broadcast to any connected SSE clients for the selected stockists
+    try {
+      broadcastNewRequest(reqDoc);
+    } catch (e) {
+      console.warn(
+        "Failed to broadcast new purchasing request",
+        e && e.message
+      );
+    }
 
     console.debug("PurchaseCardRequest saved:", { id: reqDoc._id });
 
@@ -112,15 +142,97 @@ router.post("/request", authenticate, async (req, res) => {
   }
 });
 
+// SSE endpoint: clients can connect and listen for new requests targeted to them
+// Client should connect with ?token=<jwt> where token is the stockist's auth token
+router.get("/stream", async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).send("Missing token");
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (e) {
+      return res.status(401).send("Invalid token");
+    }
+
+    const stockistId = decoded.userId;
+    if (!stockistId) return res.status(401).send("Invalid token payload");
+
+    // Set SSE headers
+    res.writeHead(200, {
+      Connection: "keep-alive",
+      "Cache-Control": "no-cache",
+      "Content-Type": "text/event-stream",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Credentials": "true",
+    });
+
+    // Send initial comment
+    res.write(`: connected\n\n`);
+
+    // Register client
+    const arr = sseClients.get(String(stockistId)) || [];
+    arr.push(res);
+    sseClients.set(String(stockistId), arr);
+
+    // Clean up on close
+    req.on("close", () => {
+      const clients = sseClients.get(String(stockistId)) || [];
+      sseClients.set(
+        String(stockistId),
+        clients.filter((r) => r !== res)
+      );
+    });
+  } catch (e) {
+    console.error("SSE stream error", e && e.message);
+    try {
+      res.status(500).end();
+    } catch (e) {}
+  }
+});
+
+// Helper: broadcast a new request doc to connected stockist clients
+const broadcastNewRequest = (reqDoc) => {
+  try {
+    if (!reqDoc || !Array.isArray(reqDoc.stockists)) return;
+    for (const sid of reqDoc.stockists) {
+      const clients = sseClients.get(String(sid)) || [];
+      for (const res of clients) {
+        try {
+          res.write(`event: newRequest\n`);
+          res.write(`data: ${JSON.stringify(reqDoc)}\n\n`);
+        } catch (e) {
+          // ignore write errors
+        }
+      }
+    }
+  } catch (e) {
+    console.error("broadcastNewRequest error", e && e.message);
+  }
+};
+
 // GET /api/purchasing-card/requests - stockist (authenticated) can list pending requests including those where they are listed
 router.get("/requests", authenticate, async (req, res) => {
   try {
     const user = req.user;
-    // try to find a stockist record that matches the authenticated user id (if token is stockist)
+    // Resolve stockist robustly: token may already have resolved a Stockist
+    // document or `req.user` may be a User that maps to a Stockist by email.
     let stockist = null;
     try {
-      stockist = await Stockist.findOne({ email: user.email });
-    } catch (e) {}
+      if (user && user.role === "stockist") {
+        stockist = await Stockist.findById(user._id);
+      }
+      if (!stockist && user && user.email) {
+        stockist = await Stockist.findOne({
+          email: String(user.email).toLowerCase(),
+        });
+      }
+      if (!stockist && user && user._id) {
+        stockist = await Stockist.findById(user._id);
+      }
+    } catch (e) {
+      stockist = null;
+    }
 
     if (!stockist)
       return res.status(403).json({
@@ -128,9 +240,17 @@ router.get("/requests", authenticate, async (req, res) => {
         message: "Only stockists can list approval requests",
       });
 
+    console.debug("Listing requests for stockist", {
+      stockistId: stockist._id,
+    });
+
+    // Only return requests that are pending and have NOT been approved by
+    // the authenticated stockist. Use $not + $elemMatch to ensure we exclude
+    // any document where approvals array contains an entry for this stockist.
     const requests = await PurchaseCardRequest.find({
       stockists: stockist._id,
       status: "pending",
+      approvals: { $not: { $elemMatch: { stockist: stockist._id } } },
     })
       .populate("requester", "medicalName email")
       .sort({ createdAt: -1 });
@@ -145,10 +265,24 @@ router.get("/requests", authenticate, async (req, res) => {
 router.post("/approve/:requestId", authenticate, async (req, res) => {
   try {
     const user = req.user;
+    // Resolve stockist reliably like in the listing route
     let stockist = null;
     try {
-      stockist = await Stockist.findOne({ email: user.email });
-    } catch (e) {}
+      if (user && user.role === "stockist") {
+        stockist = await Stockist.findById(user._id);
+      }
+      if (!stockist && user && user.email) {
+        stockist = await Stockist.findOne({
+          email: String(user.email).toLowerCase(),
+        });
+      }
+      if (!stockist && user && user._id) {
+        stockist = await Stockist.findById(user._id);
+      }
+    } catch (e) {
+      stockist = null;
+    }
+
     if (!stockist)
       return res.status(403).json({
         success: false,
@@ -173,6 +307,7 @@ router.post("/approve/:requestId", authenticate, async (req, res) => {
       return res.json({ success: true, message: "Already approved" });
     }
 
+    // Record approval
     reqDoc.approvals.push({ stockist: stockist._id, approvedAt: new Date() });
 
     // If approvals reach 3, mark approved and grant purchasing card to requester
@@ -189,6 +324,11 @@ router.post("/approve/:requestId", authenticate, async (req, res) => {
         await userDoc.save();
       }
 
+      console.debug("Request approved (threshold reached)", {
+        requestId: reqDoc._id,
+        approvals: reqDoc.approvals.length,
+      });
+
       return res.json({
         success: true,
         message: "Request approved and purchaser granted",
@@ -197,6 +337,13 @@ router.post("/approve/:requestId", authenticate, async (req, res) => {
     }
 
     await reqDoc.save();
+
+    console.debug("Approval recorded", {
+      requestId: reqDoc._id,
+      approvals: reqDoc.approvals.length,
+      stockist: stockist._id,
+    });
+
     return res.json({
       success: true,
       message: "Approval recorded",
@@ -209,6 +356,29 @@ router.post("/approve/:requestId", authenticate, async (req, res) => {
 });
 
 module.exports = router;
+
+// Public status endpoint to let a requester poll approval progress
+// GET /api/purchasing-card/status/:id
+router.get("/status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reqDoc = await PurchaseCardRequest.findById(id).lean();
+    if (!reqDoc)
+      return res
+        .status(404)
+        .json({ success: false, message: "Request not found" });
+    return res.json({
+      success: true,
+      data: {
+        status: reqDoc.status,
+        approvals: (reqDoc.approvals || []).length,
+      },
+    });
+  } catch (err) {
+    console.error("PurchaseCard status error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // GET /api/purchasing-card/approve-web?token=...  (public link clicked from email)
 router.get("/approve-web", async (req, res) => {

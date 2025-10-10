@@ -16,6 +16,12 @@ const PurchaseCardRequestSchema = new mongoose.Schema(
         approvedAt: Date,
       },
     ],
+    // Display info for the requester (purchaser) when requests are created on their behalf
+    requesterDisplay: {
+      name: String,
+      email: String,
+      purchaserId: { type: mongoose.Schema.Types.ObjectId, ref: "Purchaser" },
+    },
     // Per-stockist one-click approval tokens (for email links)
     approvalTokens: [
       {
