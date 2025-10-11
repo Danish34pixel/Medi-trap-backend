@@ -64,7 +64,34 @@ exports.createPurchaser = async (req, res) => {
       photo: photoUpload.url,
       createdBy: creatorId || undefined,
     });
-    await purchaser.save();
+    // Debug: log purchaser preview before save
+    try {
+      console.log("Saving purchaser:", {
+        fullName: purchaser.fullName,
+        addressLength: purchaser.address && purchaser.address.length,
+        contactNo: purchaser.contactNo,
+        aadharImage: Boolean(purchaser.aadharImage),
+        photo: Boolean(purchaser.photo),
+      });
+    } catch (e) {}
+
+    try {
+      await purchaser.save();
+    } catch (saveErr) {
+      console.error(
+        "Purchaser save error:",
+        saveErr && saveErr.stack ? saveErr.stack : saveErr
+      );
+      if (saveErr && saveErr.name === "ValidationError") {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: Object.values(saveErr.errors || {}).map((e) => e.message),
+        });
+      }
+      // rethrow to outer catch which handles DEBUG_API
+      throw saveErr;
+    }
     // Invalidate purchaser lists for this user and global list
     // No cache invalidation here (purchaser caching removed) - keep DB-only flow
     res.status(201).json({ success: true, data: purchaser });

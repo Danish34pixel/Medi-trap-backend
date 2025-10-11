@@ -495,10 +495,19 @@ app.use((error, req, res, next) => {
     });
   }
 
-  res.status(500).json({
-    success: false,
-    message: "Internal Server Error",
-  });
+  // If DEBUG_API is enabled, include the stack trace in the JSON response
+  if (process.env.DEBUG_API === "1") {
+    return res.status(500).json({
+      success: false,
+      message:
+        error && error.message
+          ? String(error.message)
+          : "Internal Server Error",
+      stack: error && error.stack ? String(error.stack) : undefined,
+    });
+  }
+
+  res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
 // 404 handler (must be last, and avoid wildcard string)
