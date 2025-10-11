@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Purchaser = require("../models/Purchaser");
 const Stockist = require("../models/Stockist");
 const { uploadToCloudinary } = require("../config/cloudinary");
 const {
@@ -736,6 +737,15 @@ router.post(
       const { fullName, email, password } = req.body || {};
 
       if (!fullName || !email || !password) {
+        // Log incoming request details to aid debugging in production
+        try {
+          console.debug("Purchaser signup missing fields", {
+            fullName: !!fullName,
+            email: !!email,
+            password: !!password,
+            bodyKeys: Object.keys(req.body || {}),
+          });
+        } catch (e) {}
         return res
           .status(400)
           .json({ success: false, message: "All fields are required" });
@@ -743,6 +753,14 @@ router.post(
 
       // files required
       if (!req.files || !req.files.aadharImage || !req.files.personalPhoto) {
+        try {
+          console.debug("Purchaser signup missing files", {
+            hasFiles: !!req.files,
+            aadharImage: !!(req.files && req.files.aadharImage),
+            personalPhoto: !!(req.files && req.files.personalPhoto),
+            fileFields: req.files ? Object.keys(req.files) : [],
+          });
+        } catch (e) {}
         return res.status(400).json({
           success: false,
           message: "Aadhar image and personal photo are required",
@@ -750,11 +768,100 @@ router.post(
       }
 
       // Check if email already exists
-      const exists = await User.findOne({ email: email.toLowerCase() });
-      if (exists)
-        return res
-          .status(400)
-          .json({ success: false, message: "Email already registered" });
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser) {
+        // If user exists, verify password matches before creating a Purchaser
+        const isMatch = await bcrypt.compare(password, existingUser.password);
+        if (!isMatch) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Email already registered" });
+        }
+
+        // Ensure a Purchaser record exists for this user (avoid duplicates)
+        let purchaserResp = null;
+        try {
+          // Upload files to Cloudinary (best-effort) so we can populate purchaser images
+          let aadharUpload = { url: "" };
+          let photoUpload = { url: "" };
+          try {
+            aadharUpload = await uploadToCloudinary(
+              req.files.aadharImage[0],
+              "medtek/aadhar"
+            );
+          } catch (uploadErr) {
+            console.warn(
+              "Aadhar upload failed for existing user, continuing without cloud URL:",
+              uploadErr && uploadErr.message
+            );
+          }
+
+          try {
+            photoUpload = await uploadToCloudinary(
+              req.files.personalPhoto[0],
+              "medtek/personal"
+            );
+          } catch (uploadErr) {
+            console.warn(
+              "Personal photo upload failed for existing user, continuing without cloud URL:",
+              uploadErr && uploadErr.message
+            );
+          }
+
+          const Purchaser = require("../models/Purchaser");
+          let existingPurchaser = await Purchaser.findOne({
+            $or: [
+              { createdBy: existingUser._id },
+              { email: email.toLowerCase() },
+            ],
+          });
+          if (!existingPurchaser) {
+            // create a purchaser linked to the existing user
+            const purchaserDoc = new Purchaser({
+              fullName: fullName,
+              address: req.body.address || "N/A",
+              contactNo: req.body.contactNo || "0000000000",
+              email: email.toLowerCase(),
+              password: undefined, // do not duplicate sensitive data; user already has hashed password
+              aadharImage: aadharUpload.url || null,
+              photo: photoUpload.url || null,
+              createdBy: existingUser._id,
+            });
+            await purchaserDoc.save();
+            purchaserResp = purchaserDoc.toObject();
+            delete purchaserResp.password;
+          } else {
+            purchaserResp = existingPurchaser.toObject();
+            delete purchaserResp.password;
+          }
+        } catch (pErr) {
+          console.warn(
+            "Failed to create or fetch Purchaser record for existing user:",
+            pErr && pErr.message
+          );
+        }
+
+        // create JWT for existing user
+        const payload = {
+          userId: existingUser._id,
+          email: existingUser.email,
+          role: existingUser.role,
+        };
+        const token = jwt.sign(payload, process.env.JWT_SECRET, {
+          expiresIn: "7d",
+        });
+
+        const userResp = existingUser.toObject();
+        delete userResp.password;
+
+        return res.status(200).json({
+          success: true,
+          message: "Account exists; purchaser created or returned",
+          token,
+          user: userResp,
+          purchaser: purchaserResp,
+        });
+      }
 
       // Upload files to Cloudinary (best-effort). If upload fails, log and continue
       let aadharUpload = { url: "" };
@@ -820,6 +927,30 @@ router.post(
 
       await user.save();
 
+      // Also create a Purchaser document so purchasers collection is populated
+      let purchaserResp = null;
+      try {
+        const Purchaser = require("../models/Purchaser");
+        const purchaserDoc = new Purchaser({
+          fullName: fullName,
+          address: req.body.address || "N/A",
+          contactNo: req.body.contactNo || "0000000000",
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          aadharImage: aadharUpload.url || null,
+          photo: photoUpload.url || null,
+          createdBy: user._id,
+        });
+        await purchaserDoc.save();
+        purchaserResp = purchaserDoc.toObject();
+        delete purchaserResp.password;
+      } catch (pErr) {
+        console.warn(
+          "Failed to create Purchaser record after user signup:",
+          pErr && pErr.message
+        );
+      }
+
       // create JWT
       const payload = { userId: user._id, email: user.email, role: user.role };
       const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -834,6 +965,7 @@ router.post(
         message: "Account created",
         token,
         user: userResp,
+        purchaser: purchaserResp,
       });
     } catch (err) {
       console.error("Purchaser signup error:", err && err.message);

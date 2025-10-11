@@ -17,6 +17,17 @@ const PurchaserSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      unique: false,
+    },
+    password: {
+      type: String,
+      required: false,
+    },
     aadharImage: {
       type: String, // Cloudinary URL
       required: true,

@@ -3,6 +3,7 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 const fs = require("fs");
 const path = require("path");
 const { uploadToCloudinary } = require("../config/cloudinary");
+const bcrypt = require("bcryptjs");
 
 // Create purchaser with aadhar image and photo (Cloudinary URLs)
 exports.createPurchaser = async (req, res) => {
@@ -13,7 +14,7 @@ exports.createPurchaser = async (req, res) => {
     } catch (e) {}
     // If authentication middleware attached a user, prefer it; otherwise allow anonymous creation
     const creatorId = req.user && req.user._id;
-    const { fullName, address, contactNo } = req.body;
+    const { fullName, address, contactNo, email } = req.body;
     // Expecting two files: aadharImage and photo
     if (!req.files || !req.files["aadharImage"] || !req.files["photo"]) {
       return res.status(400).json({
@@ -56,10 +57,23 @@ exports.createPurchaser = async (req, res) => {
       };
     }
 
+    // If a password was provided, hash it before storing
+    let hashedPassword = undefined;
+    if (req.body && req.body.password) {
+      try {
+        const salt = await bcrypt.genSalt(10);
+        hashedPassword = await bcrypt.hash(String(req.body.password), salt);
+      } catch (e) {
+        console.warn("Password hashing failed:", e && e.message);
+      }
+    }
+
     const purchaser = new Purchaser({
       fullName,
       address,
       contactNo,
+      email,
+      password: hashedPassword,
       aadharImage: aadharUpload.url,
       photo: photoUpload.url,
       createdBy: creatorId || undefined,
@@ -70,6 +84,7 @@ exports.createPurchaser = async (req, res) => {
         fullName: purchaser.fullName,
         addressLength: purchaser.address && purchaser.address.length,
         contactNo: purchaser.contactNo,
+        email: purchaser.email,
         aadharImage: Boolean(purchaser.aadharImage),
         photo: Boolean(purchaser.photo),
       });

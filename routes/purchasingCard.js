@@ -355,8 +355,6 @@ router.post("/approve/:requestId", authenticate, async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // Public status endpoint to let a requester poll approval progress
 // GET /api/purchasing-card/status/:id
 router.get("/status/:id", async (req, res) => {
@@ -433,3 +431,6 @@ router.get("/approve-web", async (req, res) => {
     return res.status(500).send("Server error");
   }
 });
+
+// Ensure all routes are exported (status and approve-web must be included)
+module.exports = router;
