@@ -725,294 +725,124 @@ module.exports = router;
 // ------------------------- Purchaser self-signup -------------------------
 // POST /api/auth/purchaser-signup
 // multipart form: fullName, email, password, aadharNo, aadharImage (file), personalPhoto (file)
+// ----------------------------
+// 🧾 Purchaser Signup Route
+// ----------------------------
 router.post(
   "/purchaser-signup",
   upload.fields([
     { name: "aadharImage", maxCount: 1 },
     { name: "personalPhoto", maxCount: 1 },
   ]),
-  handleUploadError,
   async (req, res) => {
     try {
-      const { fullName, email, password } = req.body || {};
+      console.log("📩 Purchaser signup request received");
+      console.log("Body keys:", Object.keys(req.body || {}));
+      console.log("File fields:", Object.keys(req.files || {}));
 
+      const { fullName, email, password } = req.body;
+
+      // ----------------------------
+      // ✅ 1. Validate text fields
+      // ----------------------------
       if (!fullName || !email || !password) {
-        // Log incoming request details to aid debugging in production
-        try {
-          console.debug("Purchaser signup missing fields", {
-            fullName: !!fullName,
-            email: !!email,
-            password: !!password,
-            bodyKeys: Object.keys(req.body || {}),
-          });
-        } catch (e) {}
+        console.warn("⚠ Missing required text fields");
         return res
           .status(400)
           .json({ success: false, message: "All fields are required" });
       }
 
-      // files required
-      if (!req.files || !req.files.aadharImage || !req.files.personalPhoto) {
-        try {
-          console.debug("Purchaser signup missing files", {
-            hasFiles: !!req.files,
-            aadharImage: !!(req.files && req.files.aadharImage),
-            personalPhoto: !!(req.files && req.files.personalPhoto),
-            fileFields: req.files ? Object.keys(req.files) : [],
-          });
-        } catch (e) {}
+      // ----------------------------
+      // ✅ 2. Validate required files
+      // ----------------------------
+      if (
+        !req.files ||
+        !req.files.aadharImage ||
+        !req.files.personalPhoto ||
+        req.files.aadharImage.length === 0 ||
+        req.files.personalPhoto.length === 0
+      ) {
+        console.warn("⚠ Missing one or both required files");
         return res.status(400).json({
           success: false,
           message: "Aadhar image and personal photo are required",
         });
       }
 
-      // Check if email already exists
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
-      if (existingUser) {
-        // If user exists, verify password matches before creating a Purchaser
-        const isMatch = await bcrypt.compare(password, existingUser.password);
-        if (!isMatch) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Email already registered" });
-        }
-
-        // Ensure a Purchaser record exists for this user (avoid duplicates)
-        let purchaserResp = null;
-        try {
-          // Upload files to Cloudinary (best-effort) so we can populate purchaser images
-          let aadharUpload = { url: "" };
-          let photoUpload = { url: "" };
-          try {
-            aadharUpload = await uploadToCloudinary(
-              req.files.aadharImage[0],
-              "medtek/aadhar"
-            );
-          } catch (uploadErr) {
-            console.warn(
-              "Aadhar upload failed for existing user, continuing without cloud URL:",
-              uploadErr && uploadErr.message
-            );
-          }
-
-          try {
-            photoUpload = await uploadToCloudinary(
-              req.files.personalPhoto[0],
-              "medtek/personal"
-            );
-          } catch (uploadErr) {
-            console.warn(
-              "Personal photo upload failed for existing user, continuing without cloud URL:",
-              uploadErr && uploadErr.message
-            );
-          }
-
-          const Purchaser = require("../models/Purchaser");
-          let existingPurchaser = await Purchaser.findOne({
-            $or: [
-              { createdBy: existingUser._id },
-              { email: email.toLowerCase() },
-            ],
-          });
-          if (!existingPurchaser) {
-            // create a purchaser linked to the existing user
-            const purchaserDoc = new Purchaser({
-              fullName: fullName,
-              address: req.body.address || "N/A",
-              contactNo: req.body.contactNo || "0000000000",
-              email: email.toLowerCase(),
-              password: undefined, // do not duplicate sensitive data; user already has hashed password
-              aadharImage: aadharUpload.url || null,
-              photo: photoUpload.url || null,
-              createdBy: existingUser._id,
-            });
-            await purchaserDoc.save();
-            purchaserResp = purchaserDoc.toObject();
-            delete purchaserResp.password;
-          } else {
-            purchaserResp = existingPurchaser.toObject();
-            delete purchaserResp.password;
-          }
-        } catch (pErr) {
-          console.warn(
-            "Failed to create or fetch Purchaser record for existing user:",
-            pErr && pErr.message
-          );
-        }
-
-        // create JWT for existing user
-        const payload = {
-          userId: existingUser._id,
-          email: existingUser.email,
-          role: existingUser.role,
-        };
-        const token = jwt.sign(payload, process.env.JWT_SECRET, {
-          expiresIn: "7d",
-        });
-
-        const userResp = existingUser.toObject();
-        delete userResp.password;
-
-        return res.status(200).json({
-          success: true,
-          message: "Account exists; purchaser created or returned",
-          token,
-          user: userResp,
-          purchaser: purchaserResp,
-        });
+      // ----------------------------
+      // ✅ 3. Check if user already exists
+      // ----------------------------
+      const existing = await Purchaser.findOne({ email });
+      if (existing) {
+        console.warn("⚠ Email already exists:", email);
+        return res
+          .status(400)
+          .json({ success: false, message: "Email already registered" });
       }
 
-      // Upload files to Cloudinary (best-effort). If upload fails, log and continue
-      let aadharUpload = { url: "" };
-      let photoUpload = { url: "" };
-      try {
-        aadharUpload = await uploadToCloudinary(
-          req.files.aadharImage[0],
-          "medtek/aadhar"
-        );
-      } catch (uploadErr) {
-        console.warn(
-          "Aadhar upload failed, continuing without cloud URL:",
-          uploadErr && uploadErr.message
-        );
-      }
+      // ----------------------------
+      // ✅ 4. Hash password
+      // ----------------------------
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-      try {
-        photoUpload = await uploadToCloudinary(
-          req.files.personalPhoto[0],
-          "medtek/personal"
-        );
-      } catch (uploadErr) {
-        console.warn(
-          "Personal photo upload failed, continuing without cloud URL:",
-          uploadErr && uploadErr.message
-        );
-      }
+      // ----------------------------
+      // ✅ 5. Upload images to Cloudinary
+      // ----------------------------
+      const aadharPath = req.files.aadharImage[0].path;
+      const photoPath = req.files.personalPhoto[0].path;
 
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(password, salt);
+      console.log("☁ Uploading images to Cloudinary...");
+      const [aadharUpload, photoUpload] = await Promise.all([
+        cloudinary.uploader.upload(aadharPath, {
+          folder: "medi-trap/purchasers/aadhar",
+          resource_type: "image",
+        }),
+        cloudinary.uploader.upload(photoPath, {
+          folder: "medi-trap/purchasers/photo",
+          resource_type: "image",
+        }),
+      ]);
 
-      // The main User schema is targeted for medical stores and has several
-      // required validators (address, contactNo, drugLicenseNo, drugLicenseImage).
-      // For purchaser self-signup we supply safe placeholder values so the
-      // document validates while still storing purchaser-specific images.
-      const user = new User({
-        medicalName: fullName,
-        ownerName: fullName,
-        // provide minimal non-empty values to satisfy schema validators
-        address: req.body.address || "N/A",
-        email: email.toLowerCase(),
-        contactNo: req.body.contactNo || "0000000000",
-        // ensure a unique-ish drugLicenseNo so unique index doesn't complain
-        drugLicenseNo: `P-${Date.now()}`,
-        // use uploaded photo/aadhar as a fallback for license image
-        drugLicenseImage: aadharUpload.url || photoUpload.url || "placeholder",
+      console.log("✅ Upload success");
+
+      // ----------------------------
+      // ✅ 6. Save Purchaser to DB
+      // ----------------------------
+      const newPurchaser = new Purchaser({
+        fullName,
+        email,
         password: hashedPassword,
-        // aadharNo omitted - not required
-        aadharImage: aadharUpload.url,
-        personalPhoto: photoUpload.url,
-        purchasingCardRequested: false,
+        aadharImage: aadharUpload.secure_url,
+        personalPhoto: photoUpload.secure_url,
+        verified: false,
       });
 
-      // Log the prepared user document (safe fields only) to help debug
-      try {
-        console.debug("Prepared user for save:", {
-          email: user.email,
-          medicalName: user.medicalName,
-          ownerName: user.ownerName,
-          drugLicenseNo: user.drugLicenseNo,
-        });
-      } catch (e) {}
+      await newPurchaser.save();
 
-      await user.save();
-
-      // Also create a Purchaser document so purchasers collection is populated
-      let purchaserResp = null;
-      try {
-        const Purchaser = require("../models/Purchaser");
-        const purchaserDoc = new Purchaser({
-          fullName: fullName,
-          address: req.body.address || "N/A",
-          contactNo: req.body.contactNo || "0000000000",
-          email: email.toLowerCase(),
-          password: hashedPassword,
-          aadharImage: aadharUpload.url || null,
-          photo: photoUpload.url || null,
-          createdBy: user._id,
-        });
-        await purchaserDoc.save();
-        purchaserResp = purchaserDoc.toObject();
-        delete purchaserResp.password;
-      } catch (pErr) {
-        console.warn(
-          "Failed to create Purchaser record after user signup:",
-          pErr && pErr.message
-        );
-      }
-
-      // create JWT
-      const payload = { userId: user._id, email: user.email, role: user.role };
-      const token = jwt.sign(payload, process.env.JWT_SECRET, {
-        expiresIn: "7d",
-      });
-
-      const userResp = user.toObject();
-      delete userResp.password;
-
-      return res.status(201).json({
+      // ----------------------------
+      // ✅ 7. Respond success
+      // ----------------------------
+      console.log("🎉 Purchaser saved successfully:", email);
+      res.status(201).json({
         success: true,
-        message: "Account created",
-        token,
-        user: userResp,
-        purchaser: purchaserResp,
+        message: "Purchaser signup successful! Awaiting admin verification.",
       });
     } catch (err) {
-      console.error("Purchaser signup error:", err && err.message);
-      console.error("Request body:", req.body);
-      console.error("Request files:", req.files);
-      if (err && err.stack) {
-        console.error("Error stack:", err.stack);
-      }
-      try {
-        if (err && typeof err.code !== "undefined") {
-          console.error("Purchaser signup error code:", err.code);
-        }
-        if (err && err.keyValue) {
-          console.error("Purchaser duplicate keyValue:", err.keyValue);
-        }
-      } catch (e) {}
+      console.error("❌ Purchaser signup failed:", err);
 
-      // Mongoose validation errors -> return 400 with details
-      if (err.name === "ValidationError") {
-        const messages = Object.values(err.errors).map((e) => e.message);
-        return res.status(400).json({
+      // Cloudinary size limit or multer issue
+      if (err.message?.includes("File too large")) {
+        return res.status(413).json({
           success: false,
-          message: "Validation error",
-          errors: messages,
+          message: "Uploaded file too large. Please upload images under 5MB.",
         });
       }
 
-      // Duplicate key (unique index) errors -> 400/409. Check numeric code to
-      // be resilient to different MongoDB driver error naming across
-      // environments.
-      if (err && err.code === 11000) {
-        const key = Object.keys(err.keyValue || {}).join(", ") || "field";
-        return res.status(409).json({
-          success: false,
-          message: `Duplicate value for ${key}`,
-        });
-      }
-
-      const isDev = process.env.NODE_ENV === "development";
-      const payload = {
+      res.status(500).json({
         success: false,
-        message: "Server error",
+        message: "Internal Server Error",
         error: err.message,
-      };
-      if (isDev && err && err.stack) payload.stack = err.stack;
-      return res.status(500).json(payload);
+      });
     }
-  },
-  cleanupUploads
+  }
 );
