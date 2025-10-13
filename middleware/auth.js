@@ -40,6 +40,9 @@ const authenticate = async (req, res, next) => {
     try {
       if (decoded && decoded.role && decoded.role === "stockist") {
         user = await Stockist.findById(decoded.userId).select("-password");
+      } else if (decoded && decoded.role && decoded.role === "purchaser") {
+        const Purchaser = require("../models/Purchaser");
+        user = await Purchaser.findById(decoded.userId).select("-password");
       } else {
         // default: look up regular User first
         user = await User.findById(decoded.userId).select("-password");
