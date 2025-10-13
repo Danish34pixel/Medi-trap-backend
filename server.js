@@ -344,6 +344,50 @@ app.use(
   })
 );
 
+// Explicit preflight response handler: some proxies or intermediaries
+// may alter the automatic CORS preflight. Ensure we always respond to
+// OPTIONS with the required CORS headers when the origin is allowed.
+app.use((req, res, next) => {
+  try {
+    if (req.method !== "OPTIONS") return next();
+
+    const origin = req.headers.origin || null;
+    if (!origin) {
+      // No origin (curl or server-to-server) - respond minimally
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization"
+      );
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      return res.status(204).end();
+    }
+
+    const normalized = String(origin).replace(/\/+$/, "");
+    if (!allowedOrigins.has(normalized)) {
+      // Not in allowlist - let the cors middleware handle and eventually reject
+      return next();
+    }
+
+    res.setHeader("Access-Control-Allow-Origin", normalized);
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Requested-With"
+    );
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    return res.status(204).end();
+  } catch (e) {
+    return next();
+  }
+});
+
 // Note: do not register app.options('*') with a bare '*' path - older
 // path-to-regexp versions can throw when parsing '*'. The `cors` middleware
 // installed above will handle preflight requests automatically for allowed

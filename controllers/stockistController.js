@@ -8,16 +8,12 @@ const cache = require("../utils/cache");
 // Get list of stockists
 exports.getStockists = async (req, res) => {
   try {
-    const cacheKey = 'stockists:all';
-    const cached = await cache.getJson(cacheKey);
-    if (cached) {
-      console.log(`getStockists: cache hit -> ${cacheKey}`);
-      return res.json({ success: true, data: cached, cached: true });
-    }
-
+    // Always read directly from DB to avoid serving stale data to admins.
+    // The previous implementation used an in-memory cache which could
+    // remain stale across multiple backend instances or when clients
+    // registered on another instance. Returning live DB results ensures
+    // the admin UI immediately sees newly-created stockists.
     const data = await Stockist.find().sort({ createdAt: -1 });
-    await cache.setJson(cacheKey, data);
-    console.log(`getStockists: cache set -> ${cacheKey}`);
     res.json({ success: true, data });
   } catch (err) {
     console.error("getStockists error:", err);
@@ -177,7 +173,9 @@ exports.createStockist = async (req, res) => {
     await stockist.save();
 
     // invalidate stockist list
-    try { await cache.del('stockists:all'); } catch (e) {}
+    try {
+      await cache.del("stockists:all");
+    } catch (e) {}
 
     res.status(201).json({ success: true, data: stockist });
   } catch (err) {
@@ -288,7 +286,9 @@ exports.registerStockist = async (req, res) => {
     await stockist.save();
 
     // invalidate stockist list
-    try { await cache.del('stockists:all'); } catch (e) {}
+    try {
+      await cache.del("stockists:all");
+    } catch (e) {}
 
     // Generate a JWT for the newly registered stockist (optional)
     const token = jwt.sign(
@@ -420,7 +420,8 @@ exports.approveStockist = async (req, res) => {
     stockist.status = "approved";
     stockist.approvedAt = new Date();
     // record admin id if available on req.user (authenticate middleware attaches it)
-    if (req.user && (req.user.id || req.user._id)) stockist.approvedBy = req.user.id || req.user._id;
+    if (req.user && (req.user.id || req.user._id))
+      stockist.approvedBy = req.user.id || req.user._id;
 
     await stockist.save();
 

@@ -1,274 +1,47 @@
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const prodMailer = require(path.join(
-  __dirname,
-  "..",
-  "utils",
-  "prodMailerHelper"
-));
-const { authenticate } = require("../middleware/auth");
+const cache = require("../utils/cache");
 
-function redact(val) {
-  if (!val) return null;
-  return String(val).length > 6 ? String(val).slice(0, 3) + "***" : "***";
-}
+// Simple debug endpoints. Disabled in production unless DEBUG_API=1.
+const isDebugEnabled = () => {
+  if (process.env.NODE_ENV === "development") return true;
+  return process.env.DEBUG_API === "1";
+};
 
-// Dev-only: return basic info about the authenticated user/token
-router.get("/me", authenticate, (req, res) => {
-  try {
-    const user = req.user || null;
-    const safe = user
-      ? {
-          id: user._id || user.id || null,
-          role: user.role || null,
-          email: user.email || user.contactNo || null,
-        }
-      : null;
-    res.json({ success: true, data: safe });
-  } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+router.get("/", (req, res) => {
+  return res.json({
+    success: true,
+    message: "Debug endpoint available",
+    debug: isDebugEnabled(),
+  });
 });
 
-router.get("/info", (req, res) => {
+// Clear the stockists list cache key. Call this on the instance you
+// believe holds a stale cache. Requires debug enabled in production.
+router.get("/clear-cache", async (req, res) => {
   try {
-    const allowed = global.__ALLOWED_ORIGINS__ || [];
-    res.json({
-      success: true,
-      allowedOrigins: allowed,
-      env: {
-        NODE_ENV: process.env.NODE_ENV || null,
-        FRONTEND_URL: process.env.FRONTEND_URL
-          ? redact(process.env.FRONTEND_URL)
-          : null,
-        FRONTEND_URLS: process.env.FRONTEND_URLS
-          ? redact(process.env.FRONTEND_URLS)
-          : null,
-        MONGO_URI_PRESENT: !!(
-          process.env.MONGO_URI ||
-          process.env.MONGODB_URI ||
-          process.env.DB_URI
-        ),
-        SENDGRID: !!(process.env.SENDGRID_API_KEY || process.env.SENDGRID_KEY),
-        EMAIL_USER: !!process.env.EMAIL_USER,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "debug error" });
-  }
-});
-
-// Simple runtime information endpoint
-router.get("/runtime", (req, res) => {
-  try {
-    const allowed = global.__ALLOWED_ORIGINS__ || [];
-    res.json({
-      success: true,
-      apiBase: process.env.FRONTEND_BASE_URL || null,
-      allowedOrigins: allowed,
-      env: {
-        NODE_ENV: process.env.NODE_ENV || null,
-        VITE_API_URL: process.env.VITE_API_URL || null,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "runtime error" });
-  }
-});
-
-// Lightweight status endpoint to help diagnose deployment problems.
-// Intentionally returns only non-secret flags (presence booleans and short redacted values).
-router.get("/status", async (req, res) => {
-  try {
-    const os = require("os");
-    const fs = require("fs");
-
-    const allowed = global.__ALLOWED_ORIGINS__ || [];
-    const cloud = require(path.join(__dirname, "..", "config", "cloudinary"));
-
-    // Basic disk check for uploads directory
-    let uploadsFree = null;
-    try {
-      const uploadsPath = path.join(__dirname, "..", "uploads");
-      if (fs.existsSync(uploadsPath)) {
-        const stats = fs.statSync(uploadsPath);
-        uploadsFree = { exists: true, sizeBytes: stats.size };
-      } else {
-        uploadsFree = { exists: false };
-      }
-    } catch (e) {
-      uploadsFree = { error: e && e.message };
+    if (!isDebugEnabled()) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Debug endpoints are disabled" });
     }
 
-    res.json({
+    const key = "stockists:all";
+    const ok = await cache.del(key);
+    return res.json({
       success: true,
-      env: {
-        NODE_ENV: process.env.NODE_ENV || null,
-        MONGO_URI_PRESENT: !!(
-          process.env.MONGO_URI ||
-          process.env.MONGODB_URI ||
-          process.env.DB_URI
-        ),
-        JWT_SECRET_PRESENT: !!process.env.JWT_SECRET,
-        CLOUDINARY_CONFIGURED: !!cloud.CLOUDINARY_CONFIGURED,
-        FRONTEND_URL: process.env.FRONTEND_URL || null,
-      },
-      allowedOrigins: allowed,
-      uploads: uploadsFree,
-      memory: {
-        free: os.freemem(),
-        total: os.totalmem(),
-      },
-      timestamp: Date.now(),
+      message: "Cache cleared",
+      key,
+      deleted: !!ok,
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "status error" });
-  }
-});
-
-// Protected endpoint to run an SMTP check from the running process.
-// Accepts POST { to: "recipient@example.com" } and requires header
-// `x-debug-token` to equal process.env.DEBUG_TOKEN. This avoids exposing
-// an unauthenticated send endpoint in public deployments.
-router.post("/email-check", async (req, res) => {
-  try {
-    const token = req.headers["x-debug-token"] || "";
-    if (!process.env.DEBUG_TOKEN) {
-      return res.status(403).json({
+    console.error("debug/clear-cache error:", err);
+    return res
+      .status(500)
+      .json({
         success: false,
-        message:
-          "Email check endpoint disabled on this deployment (no DEBUG_TOKEN set).",
+        message: err && err.message ? err.message : String(err),
       });
-    }
-    if (!token || token !== process.env.DEBUG_TOKEN) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid debug token" });
-    }
-
-    const to = req.body && req.body.to ? String(req.body.to).trim() : null;
-    if (!to)
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing 'to' in body" });
-
-    const result = await prodMailer.sendTestMail({
-      to,
-      subject: "Prod SMTP check",
-      text: "This is a production SMTP diagnostic message.",
-    });
-    return res.json({ success: true, result });
-  } catch (err) {
-    console.error("/debug/email-check error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Email check failed",
-      error: err && err.message,
-    });
-  }
-});
-
-// Protected helper to fetch image headers and a small range from Cloudinary to diagnose
-// network/TLS issues. Restricted to Cloudinary domains to avoid open proxy.
-router.post("/fetch-image", async (req, res) => {
-  try {
-    const token = req.headers["x-debug-token"] || "";
-    if (!process.env.DEBUG_TOKEN) {
-      return res.status(403).json({
-        success: false,
-        message: "Image fetch disabled (no DEBUG_TOKEN set).",
-      });
-    }
-    if (!token || token !== process.env.DEBUG_TOKEN) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid debug token" });
-    }
-
-    const { url } = req.body || {};
-    if (!url || typeof url !== "string")
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing 'url' in body" });
-
-    // Allow only Cloudinary hosts
-    const allowedHostPattern = /https:\/\/(?:[a-z0-9\-]+\.)*cloudinary\.com\//i;
-    if (!allowedHostPattern.test(url)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Only Cloudinary URLs are allowed" });
-    }
-
-    const doFetch = async (method, extraHeaders = {}) => {
-      if (typeof fetch === "function") {
-        const resp = await fetch(url, { method, headers: extraHeaders });
-        const headers = {};
-        resp.headers.forEach((v, k) => (headers[k] = v));
-        const body =
-          method === "GET" ? await resp.arrayBuffer().catch(() => null) : null;
-        return {
-          status: resp.status,
-          ok: resp.ok,
-          headers,
-          bodyLength: body ? body.byteLength : null,
-        };
-      }
-      const https = require("https");
-      return new Promise((resolve, reject) => {
-        const parsed = new URL(url);
-        const opts = {
-          method,
-          hostname: parsed.hostname,
-          path: parsed.pathname + parsed.search,
-          headers: extraHeaders,
-        };
-        const req = https.request(opts, (r) => {
-          const headers = r.headers || {};
-          let length = 0;
-          if (method === "GET") {
-            r.on("data", (chunk) => {
-              length += chunk.length;
-              if (length > 16 * 1024) req.destroy();
-            });
-          }
-          r.on("end", () =>
-            resolve({
-              status: r.statusCode,
-              ok: r.statusCode >= 200 && r.statusCode < 400,
-              headers,
-              bodyLength: length,
-            })
-          );
-          r.on("error", (e) => reject(e));
-        });
-        req.on("error", (e) => reject(e));
-        req.end();
-      });
-    };
-
-    let headResult = null;
-    try {
-      headResult = await doFetch("HEAD");
-    } catch (headErr) {
-      headResult = { error: headErr && headErr.message };
-    }
-
-    let getResult = null;
-    try {
-      getResult = await doFetch("GET", { Range: "bytes=0-16383" });
-    } catch (getErr) {
-      getResult = { error: getErr && getErr.message };
-    }
-
-    return res.json({ success: true, url, head: headResult, get: getResult });
-  } catch (err) {
-    console.error("/debug/fetch-image error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "fetch-image failed",
-      error: err && err.message,
-    });
   }
 });
 
