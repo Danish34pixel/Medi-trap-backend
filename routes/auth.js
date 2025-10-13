@@ -380,52 +380,70 @@ router.post("/login", async (req, res) => {
 
     // Find user by email
     let user = await User.findOne({ email: email.toLowerCase() });
-
-    // If no User found, check Stockist collection (admin may have created stockist with password)
     let isStockist = false;
+    let isPurchaser = false;
     if (!user) {
       const stockist = await Stockist.findOne({
         email: email.toLowerCase(),
       }).lean();
-      if (!stockist || !stockist.password) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid credentials" });
-      }
-
-      const isMatchStockist = await bcrypt.compare(password, stockist.password);
-      if (!isMatchStockist) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid credentials" });
-      }
-
-      // Enforce manual approval workflow: only approved stockists can login
-      if (!stockist.status || stockist.status !== "approved") {
-        if (stockist.status === "declined") {
+      if (stockist && stockist.password) {
+        const isMatchStockist = await bcrypt.compare(password, stockist.password);
+        if (!isMatchStockist) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid credentials" });
+        }
+        // Enforce manual approval workflow: only approved stockists can login
+        if (!stockist.status || stockist.status !== "approved") {
+          if (stockist.status === "declined") {
+            return res.status(403).json({
+              success: false,
+              message: "Your registration was declined by admin.",
+            });
+          }
           return res.status(403).json({
             success: false,
-            message: "Your registration was declined by admin.",
+            message:
+              "Your account is under review. Please wait for admin approval.",
           });
         }
-        return res.status(403).json({
-          success: false,
-          message:
-            "Your account is under review. Please wait for admin approval.",
-        });
+        // Create a lightweight user-like object for the stockist
+        user = {
+          _id: stockist._id,
+          medicalName: stockist.name || stockist.medicalName || "",
+          ownerName: stockist.contactPerson || "",
+          address: stockist.address || "",
+          email: stockist.email,
+          contactNo: stockist.phone || stockist.contact || "",
+          role: "stockist",
+        };
+        isStockist = true;
+      } else {
+        // If not a stockist, check Purchaser collection
+        const Purchaser = require("../models/Purchaser");
+        const purchaser = await Purchaser.findOne({ email: email.toLowerCase() });
+        if (!purchaser || !purchaser.password) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid credentials" });
+        }
+        const isMatchPurchaser = await bcrypt.compare(password, purchaser.password);
+        if (!isMatchPurchaser) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid credentials" });
+        }
+        // Create a user-like object for purchaser
+        user = {
+          _id: purchaser._id,
+          fullName: purchaser.fullName,
+          address: purchaser.address,
+          email: purchaser.email,
+          contactNo: purchaser.contactNo,
+          role: "purchaser",
+        };
+        isPurchaser = true;
       }
-
-      // Create a lightweight user-like object for the stockist
-      user = {
-        _id: stockist._id,
-        medicalName: stockist.name || stockist.medicalName || "",
-        ownerName: stockist.contactPerson || "",
-        address: stockist.address || "",
-        email: stockist.email,
-        contactNo: stockist.phone || stockist.contact || "",
-        role: "stockist",
-      };
-      isStockist = true;
     } else {
       // Check password for regular User
       const isMatch = await bcrypt.compare(password, user.password);
