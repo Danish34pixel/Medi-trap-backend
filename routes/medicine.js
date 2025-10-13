@@ -8,11 +8,7 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 router.get("/", medicineController.getMedicines);
 
 // POST /api/medicine/quick - quick create (admin only)
-router.post(
-  "/quick",
-  authenticate,
-  isAdmin,
-  medicineController.createMedicineQuick
-);
+// Allow public quick-create for medicines (no auth) per developer request.
+router.post("/quick", medicineController.createMedicineQuick);
 
 module.exports = router;

@@ -23,7 +23,8 @@ router.post(
 
 // GET /api/staff - list staff
 // listing is public but can be filtered by ?stockist=me (requires auth) or ?stockist=<id>
-router.get("/", authenticate, staffController.getStaffs);
+// Note: do not require authentication here so public pages can display staff lists.
+router.get("/", staffController.getStaffs);
 
 // GET /api/staff/:id - get staff details
 router.get("/:id", authenticate, staffController.getStaff);

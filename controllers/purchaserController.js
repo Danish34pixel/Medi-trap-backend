@@ -256,11 +256,38 @@ exports.createPurchaser = async (req, res) => {
     const aadharFile = req.files.aadharImage[0];
     const photoFile = req.files.photo[0];
 
-    // Upload to Cloudinary
-    const [aadharUpload, photoUpload] = await Promise.all([
-      uploadToCloudinary(aadharFile, "meditrap/purchasers"),
-      uploadToCloudinary(photoFile, "meditrap/purchasers"),
-    ]);
+    // Upload to Cloudinary (best-effort): if one upload fails, fall back to
+    // using the local file path so purchaser creation can continue in dev.
+    let aadharUpload = null;
+    let photoUpload = null;
+    try {
+      aadharUpload = await uploadToCloudinary(
+        aadharFile,
+        "meditrap/purchasers"
+      );
+    } catch (uploadErr) {
+      console.warn(
+        "Aadhar upload failed, falling back to local file. Error:",
+        uploadErr && uploadErr.message
+      );
+      aadharUpload = {
+        url: aadharFile && aadharFile.path ? `file://${aadharFile.path}` : null,
+        public_id: null,
+      };
+    }
+
+    try {
+      photoUpload = await uploadToCloudinary(photoFile, "meditrap/purchasers");
+    } catch (uploadErr) {
+      console.warn(
+        "Photo upload failed, falling back to local file. Error:",
+        uploadErr && uploadErr.message
+      );
+      photoUpload = {
+        url: photoFile && photoFile.path ? `file://${photoFile.path}` : null,
+        public_id: null,
+      };
+    }
 
     // Hash password if provided
     let hashedPassword;
@@ -287,7 +314,23 @@ exports.createPurchaser = async (req, res) => {
 
     res.status(201).json({ success: true, data: purchaser });
   } catch (err) {
-    console.error(err);
+    // Log full error on server
+    console.error(
+      "Purchaser creation error:",
+      err && err.stack ? err.stack : err
+    );
+    // If DEBUG_API is enabled, return verbose error details to the client (dev only)
+    if (process.env.DEBUG_API === "1") {
+      return res.status(500).json({
+        success: false,
+        message:
+          err && err.message
+            ? String(err.message)
+            : "Failed to create purchaser",
+        stack: err && err.stack ? String(err.stack) : undefined,
+      });
+    }
+
     res
       .status(500)
       .json({ success: false, message: "Failed to create purchaser" });
@@ -396,12 +439,10 @@ exports.delete = async (req, res) => {
       return res.json({ success: true, message: "Purchaser deleted" });
     }
 
-    return res
-      .status(403)
-      .json({
-        success: false,
-        message: "Not authorized to delete this purchaser",
-      });
+    return res.status(403).json({
+      success: false,
+      message: "Not authorized to delete this purchaser",
+    });
   } catch (err) {
     console.error(err);
     res

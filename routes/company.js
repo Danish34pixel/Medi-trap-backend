@@ -7,6 +7,7 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 router.get("/", companyController.getCompanies);
 
 // POST /api/company - create a new company (admin only)
-router.post("/", authenticate, isAdmin, companyController.createCompany);
+// Allow public create for companies (no auth) per developer request.
+router.post("/", companyController.createCompany);
 
 module.exports = router;

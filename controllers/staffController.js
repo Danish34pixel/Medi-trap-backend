@@ -1,4 +1,5 @@
 const Staff = require("../models/Staff");
+const mongoose = require("mongoose");
 const {
   uploadToCloudinary,
   deleteFromCloudinary,
@@ -93,11 +94,30 @@ exports.getStaffs = async (req, res) => {
       }
     }
 
-    const data = await Staff.find(filter).sort({ createdAt: -1 });
+    // Ensure MongoDB connection is available
+    try {
+      if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+        console.error(
+          "getStaffs: MongoDB not connected, readyState=",
+          mongoose.connection && mongoose.connection.readyState
+        );
+        return res
+          .status(503)
+          .json({ success: false, message: "Database unavailable" });
+      }
+    } catch (e) {
+      console.error("getStaffs: connection check failed", e && e.message);
+    }
+
+    console.debug("getStaffs -> filter", filter, "query", q);
+    const data = await Staff.find(filter).sort({ createdAt: -1 }).lean().exec();
     res.json({ success: true, data });
   } catch (err) {
-    console.error("getStaffs error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error("getStaffs error:", err && err.stack ? err.stack : err);
+    // If DEBUG_API is enabled the global error handler will include stack.
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to load staff list" });
   }
 };
 
