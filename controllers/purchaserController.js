@@ -319,6 +319,13 @@ exports.createPurchaser = async (req, res) => {
       "Purchaser creation error:",
       err && err.stack ? err.stack : err
     );
+    // Handle duplicate key error (email already exists)
+    if (err && err.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered",
+      });
+    }
     // If DEBUG_API is enabled, return verbose error details to the client (dev only)
     if (process.env.DEBUG_API === "1") {
       return res.status(500).json({
