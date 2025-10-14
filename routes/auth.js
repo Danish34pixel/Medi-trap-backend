@@ -368,97 +368,83 @@ router.post(
 // @access  Public
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     // Check if required fields are present
-    if (!email || !password) {
+    if (!email || !password || !role) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+        message: "Email, password, and role are required",
       });
     }
 
-    // Find user by email
-    let user = await User.findOne({ email: email.toLowerCase() });
-    let isStockist = false;
-    let isPurchaser = false;
-    if (!user) {
-      const stockist = await Stockist.findOne({
-        email: email.toLowerCase(),
-      }).lean();
-      if (stockist && stockist.password) {
-        const isMatchStockist = await bcrypt.compare(password, stockist.password);
-        if (!isMatchStockist) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid credentials" });
-        }
-        // Enforce manual approval workflow: only approved stockists can login
-        if (!stockist.status || stockist.status !== "approved") {
-          if (stockist.status === "declined") {
-            return res.status(403).json({
-              success: false,
-              message: "Your registration was declined by admin.",
-            });
-          }
+    let user = null;
+    if (role === "stockist") {
+      const stockist = await Stockist.findOne({ email: email.toLowerCase() });
+      if (!stockist || !stockist.password) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      const isMatchStockist = await bcrypt.compare(password, stockist.password);
+      if (!isMatchStockist) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      if (!stockist.status || stockist.status !== "approved") {
+        if (stockist.status === "declined") {
           return res.status(403).json({
             success: false,
-            message:
-              "Your account is under review. Please wait for admin approval.",
+            message: "Your registration was declined by admin.",
           });
         }
-        // Create a lightweight user-like object for the stockist
-        user = {
-          _id: stockist._id,
-          medicalName: stockist.name || stockist.medicalName || "",
-          ownerName: stockist.contactPerson || "",
-          address: stockist.address || "",
-          email: stockist.email,
-          contactNo: stockist.phone || stockist.contact || "",
-          role: "stockist",
-        };
-        isStockist = true;
-      } else {
-        // If not a stockist, check Purchaser collection
-        const Purchaser = require("../models/Purchaser");
-        const purchaser = await Purchaser.findOne({ email: email.toLowerCase() });
-        if (!purchaser || !purchaser.password) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid credentials" });
-        }
-        const isMatchPurchaser = await bcrypt.compare(password, purchaser.password);
-        if (!isMatchPurchaser) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid credentials" });
-        }
-        // Create a user-like object for purchaser
-        user = {
-          _id: purchaser._id,
-          fullName: purchaser.fullName,
-          address: purchaser.address,
-          email: purchaser.email,
-          contactNo: purchaser.contactNo,
-          role: "purchaser",
-        };
-        isPurchaser = true;
+        return res.status(403).json({
+          success: false,
+          message: "Your account is under review. Please wait for admin approval.",
+        });
       }
-    } else {
-      // Check password for regular User
-      const isMatch = await bcrypt.compare(password, user.password);
+      user = {
+        _id: stockist._id,
+        medicalName: stockist.name || stockist.medicalName || "",
+        ownerName: stockist.contactPerson || "",
+        address: stockist.address || "",
+        email: stockist.email,
+        contactNo: stockist.phone || stockist.contact || "",
+        role: "stockist",
+      };
+    } else if (role === "medicalOwner") {
+      const medicalOwner = await User.findOne({ email: email.toLowerCase() });
+      if (!medicalOwner || !medicalOwner.password) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      const isMatch = await bcrypt.compare(password, medicalOwner.password);
       if (!isMatch) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid credentials" });
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
       }
+      user = medicalOwner;
+    } else if (role === "purchaser") {
+      const purchaser = await Purchaser.findOne({ email: email.toLowerCase() });
+      if (!purchaser || !purchaser.password) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      const isMatchPurchaser = await bcrypt.compare(password, purchaser.password);
+      if (!isMatchPurchaser) {
+        return res.status(400).json({ success: false, message: "Invalid credentials" });
+      }
+      user = {
+        _id: purchaser._id,
+        fullName: purchaser.fullName,
+        address: purchaser.address,
+        email: purchaser.email,
+        contactNo: purchaser.contactNo,
+        role: "purchaser",
+      };
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid role" });
     }
 
     // Create JWT token
     const payload = {
       userId: user._id,
       email: user.email,
-      role: user.role || "stockist",
+      role: user.role || role,
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -468,8 +454,7 @@ router.post("/login", async (req, res) => {
     // Remove password from response (handle Mongoose doc vs plain object)
     let userResponse;
     try {
-      userResponse =
-        typeof user.toObject === "function" ? user.toObject() : { ...user };
+      userResponse = typeof user.toObject === "function" ? user.toObject() : { ...user };
     } catch (e) {
       userResponse = { ...user };
     }
