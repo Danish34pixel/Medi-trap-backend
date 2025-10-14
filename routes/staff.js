@@ -4,7 +4,6 @@ const { upload } = require("../middleware/upload");
 const staffController = require("../controllers/staffController");
 const { authenticate, isAdmin } = require("../middleware/auth");
 // sanitizers removed per user request
-const xss = require("xss-clean");
 
 // POST /api/staff - create staff (expects image and aadharCard files)
 // POST /api/staff - create staff (expects image and aadharCard files)
@@ -16,8 +15,6 @@ router.post(
     { name: "image", maxCount: 1 },
     { name: "aadharCard", maxCount: 1 },
   ]),
-
-  xss(),
   staffController.createStaff
 );
 
