@@ -78,6 +78,7 @@ const stockistRoutes = tryRequireRoute("stockist");
 const medicineRoutes = tryRequireRoute("medicine");
 const companyRoutes = tryRequireRoute("company");
 const staffRoutes = tryRequireRoute("staff");
+const userRoutes = tryRequireRoute("user");
 const migrationRoutes = tryRequireRoute("migration");
 const purchasingCardRoutes = require("./routes/purchasingCard");
 
@@ -217,6 +218,8 @@ app.use("/api/purchaser", purchaserRoutes);
 app.use("/api/stockist", stockistRoutes);
 app.use("/api/medicine", medicineRoutes);
 app.use("/api/company", companyRoutes);
+// Mount public user routes (list/get) and admin approve/decline endpoints
+app.use("/api/user", userRoutes);
 // Mount staff routes
 app.use("/api/staff", staffRoutes);
 // Mount migration routes (dry-run backfill)
@@ -233,6 +236,24 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+// Development-only debug endpoints to inspect DB state quickly
+if (isDevelopment) {
+  app.get("/api/debug/users", async (req, res) => {
+    try {
+      // Lazy-require the model so this endpoint can be no-op in production builds
+      const User = require("./models/User");
+      const count = await User.countDocuments();
+      const sample = await User.find().sort({ createdAt: -1 }).limit(10).lean();
+      return res.json({ success: true, count, sample });
+    } catch (e) {
+      console.error("/api/debug/users error:", e && e.message);
+      return res
+        .status(500)
+        .json({ success: false, message: "Debug endpoint failed" });
+    }
+  });
+}
 
 // Error handling middleware
 app.use(handleUploadError);
