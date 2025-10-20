@@ -24,5 +24,11 @@ const PurchasingRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+PurchasingRequestSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.requester?.tempData;
+    delete ret.purchaserData;
+    return ret;
+  },
+});
 module.exports = mongoose.model("PurchasingRequest", PurchasingRequestSchema);

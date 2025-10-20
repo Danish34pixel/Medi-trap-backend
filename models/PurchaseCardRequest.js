@@ -39,7 +39,13 @@ const PurchaseCardRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+PurchaseCardRequestSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.approvalTokens;
+    delete ret.__v;
+    return ret;
+  },
+})
 module.exports = mongoose.model(
   "PurchaseCardRequest",
   PurchaseCardRequestSchema

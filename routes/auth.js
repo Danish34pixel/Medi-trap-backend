@@ -681,7 +681,8 @@ router.post("/logout", authenticate, async (req, res) => {
 router.get("/users", async (req, res) => {
   try {
     console.log("Fetching all users..."); // Debugging log
-    const users = await User.find().select("-password"); // Exclude passwords from the response
+    // const users = await User.find().select("-password"); // Exclude passwords from the response
+    const users = await User.find().select("-password -contactNo -address -drugLicenseImage");
     console.log("Users fetched:", users); // Debugging log
     res.json({
       success: true,

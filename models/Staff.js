@@ -17,4 +17,14 @@ const StaffSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+StaffSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.aadharCard;       
+    delete ret.address;          
+    delete ret.imagePublicId;     
+    delete ret.aadharPublicId;    
+    return ret;
+  },
+});
+
 module.exports = mongoose.model("Staff", StaffSchema);

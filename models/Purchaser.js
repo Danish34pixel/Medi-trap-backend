@@ -27,6 +27,7 @@ const PurchaserSchema = new mongoose.Schema(
     password: {
       type: String,
       required: false,
+      select: false,
     },
     aadharImage: {
       type: String, // Cloudinary URL
@@ -35,6 +36,10 @@ const PurchaserSchema = new mongoose.Schema(
     photo: {
       type: String, // Cloudinary URL
       required: true,
+    },
+    photoPublicId: {
+      type: String, // store for easy deletion later
+      trim: true,
     },
     // reference to the user/stockist who created this purchaser
     createdBy: {
@@ -45,5 +50,14 @@ const PurchaserSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+PurchaserSchema.set("toJSON", {
+  transform: (doc, ret) => {
+    delete ret.password;
+    delete ret.address;
+    delete ret.contactNo;
+    delete ret.email;
+    delete ret.__v;
+    return ret;
+  },
+});
 module.exports = mongoose.model("Purchaser", PurchaserSchema);

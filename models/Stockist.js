@@ -18,7 +18,7 @@ const StockistSchema = new mongoose.Schema(
     licenseNumber: String,
     licenseExpiry: Date,
     licenseImageUrl: { type: String },
-  // New fields
+    // New fields
     dob: Date,
     bloodGroup: String,
     profileImageUrl: { type: String },
@@ -26,16 +26,31 @@ const StockistSchema = new mongoose.Schema(
     cntxNumber: String,
     // Approval metadata (set by admin)
     approved: { type: Boolean, default: false },
-  declined: { type: Boolean, default: false },
-  declinedAt: Date,
-  // Processing status: 'processing' -> waiting for admin review
-  // 'approved' -> admin approved
-  // 'declined' -> admin declined
-  status: { type: String, enum: ["processing", "approved", "declined"], default: "processing" },
+    declined: { type: Boolean, default: false },
+    declinedAt: Date,
+    // Processing status: 'processing' -> waiting for admin review
+    // 'approved' -> admin approved
+    // 'declined' -> admin declined
+    status: {
+      type: String,
+      enum: ["processing", "approved", "declined"],
+      default: "processing",
+    },
     approvedAt: Date,
     approvedBy: { type: String },
   },
   { strict: false, timestamps: true }
 );
+
+StockistSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.phone;
+    delete ret.address;
+    delete ret.licenseImageUrl;
+    delete ret.profileImageUrl;
+    return ret;
+  },
+});
 
 module.exports = mongoose.model("Stockist", StockistSchema);

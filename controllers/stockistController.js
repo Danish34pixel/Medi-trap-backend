@@ -8,13 +8,30 @@ const cache = require("../utils/cache");
 // Get list of stockists
 exports.getStockists = async (req, res) => {
   try {
+    let { page = 1, limit = 10 } = req.query;
+    page = parseInt(page);
+    limit = parseInt(limit);
+    const totalStockists = await Stockist.countDocuments();
+
+    // Fetch paginated data
+    const data = await Stockist.find()
+      .sort({ createdAt: -1 }) // newest first
+      .skip((page - 1) * limit)
+      .limit(limit);
     // Always read directly from DB to avoid serving stale data to admins.
     // The previous implementation used an in-memory cache which could
     // remain stale across multiple backend instances or when clients
     // registered on another instance. Returning live DB results ensures
     // the admin UI immediately sees newly-created stockists.
-    const data = await Stockist.find().sort({ createdAt: -1 });
-    res.json({ success: true, data });
+    // const data = await Stockist.find().sort({ createdAt: -1 });
+    res.json({
+      success: true,
+      currentPage: page,
+      totalPages: Math.ceil(totalStockists / limit),
+      totalStockists,
+      count: data.length,
+      data,
+    });
   } catch (err) {
     console.error("getStockists error:", err);
     res.status(500).json({ success: false, message: err.message });

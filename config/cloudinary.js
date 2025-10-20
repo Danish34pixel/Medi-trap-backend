@@ -38,9 +38,12 @@ const uploadToCloudinary = async (file, folder = "medtek") => {
     // from a persistent store or configure Cloudinary.
     return { url: `file://${file.path}`, public_id: null };
   }
+  const fileExt = path.extname(file.originalname);
+  const publicId = `${folder}/${uuidv4()}${fileExt}`;
 
   try {
     const result = await cloudinary.uploader.upload(file.path, {
+      public_id: publicId, // let Cloudinary generate ID
       folder: folder,
       resource_type: "auto",
       transformation: [{ quality: "auto:good" }, { fetch_format: "auto" }],

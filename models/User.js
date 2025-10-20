@@ -111,6 +111,21 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+userSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.address;
+    delete ret.personalPhoto;
+    delete ret.aadharImage;
+    delete ret.aadharNo;
+    delete ret.drugLicenseImage;
+    delete ret.drugLicenseNo;
+    delete ret.contactNo;
+    delete ret.resetPasswordToken;
+    delete ret.resetPasswordExpires;
+    return ret;
+  },
+})
 // Note: `unique: true` is declared on `email` and `drugLicenseNo` above which
 // creates the necessary unique indexes. Avoid declaring duplicate indexes
 // with `schema.index()` to prevent Mongoose duplicate-index warnings.

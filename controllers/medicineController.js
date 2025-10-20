@@ -2,8 +2,25 @@ const Medicine = require("../models/Medicine");
 
 exports.getMedicines = async (req, res) => {
   try {
-    const data = await Medicine.find().sort({ createdAt: -1 });
-    res.json({ success: true, data });
+    let { page = 1, limit = 10 } = req.query;
+    page = parseInt(page);
+    limit = parseInt(limit);
+    // Count total medicines
+    const totalMedicines = await Medicine.countDocuments();
+
+    // Fetch paginated medicines
+    const data = await Medicine.find()
+      .sort({ createdAt: -1 }) // newest first
+      .skip((page - 1) * limit)
+      .limit(limit);
+    res.json({
+      success: true,
+      currentPage: page,
+      totalPages: Math.ceil(totalMedicines / limit),
+      totalMedicines,
+      count: data.length,
+      data,
+    });
   } catch (err) {
     console.error("getMedicines error:", err);
     res.status(500).json({ success: false, message: err.message });

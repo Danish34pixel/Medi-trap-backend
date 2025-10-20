@@ -11,17 +11,28 @@ const adminAuditSchema = new mongoose.Schema(
     targetUser: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: false,
     },
     action: {
       type: String,
-      enum: ["approve", "decline"],
+      enum: ["approve", "decline", "suspend", "reactivate"],
       required: true,
     },
-    note: { type: String },
-    ip: { type: String },
-    userAgent: { type: String },
+    note: { type: String,
+      trim: true,
+      maxlength: [500, "Note cannot exceed 500 characters"],
+     },
+    ip: { type: String, trim: true },
+    userAgent: { type: String, trim: true },
   },
   { timestamps: true }
 );
-
+AdminAuditSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.__v; 
+    delete ret.ip;
+    delete ret.userAgent; 
+    return ret;
+  },
+});
 module.exports = mongoose.model("AdminAudit", adminAuditSchema);
